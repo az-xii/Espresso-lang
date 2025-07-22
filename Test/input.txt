@@ -1,0 +1,143 @@
+// ==== 1. Hello World ====
+@safe  // Guaranteed no crashes (unless IO fails)
+func main() -> int {
+    io::Output("Hello, World!\nEnter your name: ")
+    string name = try io::Input() ? else @panic("Input failed")
+
+    io::Output(f"Hello, {name}! How old are you?")
+    int age = try io::Input().toInt() ? else {
+        io::Output("Invalid age! Defaulting to 21.")
+        21  // Fallback value
+    }
+
+    @pre(age >= 0)  // Age can't be negative
+    io::Output(f"Ohh so you're {age}, hm?")
+    return 0
+}
+
+
+// ==== 2. Fibonacci Sequence ====
+@checked  // Bounds-checked math
+func main() -> int {
+    list[int] nums = [0, 1]  // Explicit type
+
+    for int i = 1; i < 100; i += 1 {
+        @unchecked {  // Speed hack (no bounds checks)
+            int now = nums[i]
+            int prev = nums[i - 1]
+            nums.append(now + prev)
+        }
+    }
+
+    io::Output(f"Fibonacci Sequence ({nums.Size} terms):")
+    io::Output(nums.Join(", "))
+    return 0
+}
+
+
+// ==== 3. Rocket Simulator ====
+import Space
+
+@alias Result = union 
+
+enum LaunchError { Success, FuelLow, EngineFailure }
+
+class Rocket {
+    private name
+    private double fuel
+    private bool is_launched = false
+
+    @pre(fuel > 0.0)
+    public func Rocket(string name="My_Rocket", double fuel) {
+        this->name = name
+        this->fuel = fuel
+    }
+
+    @pre(fuel > 0.0)
+    public func Launch() -> Result[void, LaunchError] {
+        try { Space::Hardware::Ignite() } except (err) { return LaunchError.EngineFailure }
+        fuel -= 75.0
+        is_launched = true
+
+        if fuel <= 20.0 {
+            return LaunchError.FuelLow
+        }
+        return void
+    }
+}
+
+func main() -> int {
+    Rocket rocket = Rocket(fuel=100.0)
+    match rocket.Launch() {
+        case void => io::Output("Liftoff!")
+        case LaunchError => io::Output(f"Launch failed: {err}")
+    }
+    return 0
+}
+
+
+// ==== 4. Generic Payload System ====
+@namespace Space::Payloads {
+    class Container[T] {
+        @const private T item
+        private bool is_secured = false
+
+        @unsafe
+        public func Secure() -> void {
+            @io Space::Hardware::Lock()  // Requires @unsafe
+            is_secured = true
+        }
+
+        @unsafe
+        public func Release() {
+            @io this->item.Activate() // Requires @unsafe
+        }
+    }
+}
+
+class Satellite {
+    private string name
+    
+    public func Satellite(string name) {
+        this->name = name
+    }
+
+    public func Activate(string message="Hello from LEO!") {
+        io::Output(f"${this->name} says : ${message}")
+    }
+}
+func main() -> int {
+    Space::Payloads::Container[Satellite] cargo
+    cargo.Secure()
+    io::Output("Payload secured!")
+    return 0
+}
+
+// ==== 5. NASA-Grade Thruster Control ====
+import Space
+import Math
+
+@const double MAX_THRUST = 1000.0
+@const int MAX_ITERATIONS = 1000
+
+@alias Result = union 
+
+@safe func CalculateTrajectory(double angle) -> Result[double, CalcError] {
+    @pre(angle >= 0.0 and angle <= 90.0)
+    @checked let thrust = MAX_THRUST * Math::Trig::Sin(angle)
+    return thrust
+}
+
+func main() -> int {
+    double fuel = 500.0
+    for int i = 0; i < MAX_ITERATIONS; i += 1 {
+        match CalculateTrajectory(45.0) {
+            case double => {
+                @unsafe Space::Hardware::Ignite(thrust)
+                fuel -= thrust
+            }
+            case Err as e => @panic(f"Trajectory failed: {e}")
+        }
+    }
+    return 0
+}
