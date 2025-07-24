@@ -1,8 +1,4 @@
-from ast import pattern
 from enum import Enum
-from textwrap import indent
-from token import OP
-from turtle import st
 from typing import List, Union, Optional, Dict, Tuple, Any, Literal
 from abc import ABC, abstractmethod
 import re
@@ -120,6 +116,7 @@ TYPE_MAP : dict = {
     "void": "void", # Void type
     "any": "EspressoAny", # Any type
     "list": "EspressoList", # List type
+    "collection": "EspressoCollection", # List type
     "map": "EspressoDict", # Dictionary type
     "set": "EspressoSet", # Set type
     "tuple": "EspressoTuple", # Tuple type
@@ -243,7 +240,7 @@ class NewLine(_ASTNode):
 
     def To_CXX(self) -> str:
         return "\n"
- 
+
 class Indent(_ASTNode):
     """Represents an indentation in the source code."""
     def __init__(self, level: int = 1):
