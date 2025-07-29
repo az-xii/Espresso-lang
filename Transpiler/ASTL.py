@@ -52,7 +52,8 @@ class NodeType(Enum):
     RAW_STRING_LITERAL = "RAW_STRING_LITERAL"
     F_STRING_LITERAL = "F_STRING_LITERAL"
     BOOL_LITERAL = "BOOL_LITERAL"
-    NONE_LITERAL = "NONE_LITERAL"
+    VOID_LITERAL = "VOID_LITERAL"
+    NULLPTR_LITERAL = "NULLPTR_LITERAL"
 
     FUNC_PARAM = "FUNC_PARAM"
     FUNC_CALL_PARAM = "FUNC_CALL_PARAM"
@@ -60,7 +61,7 @@ class NodeType(Enum):
     FUNCTION_CALL = "FUNCTION_CALL"
     LAMBDA_EXPR = "LAMBDA_EXPR"
     RETURN = "RETURN"
-
+    NULLPTR_LITERAL
     GENERIC_PARAM = "GENERIC_PARAM"
     CLASS_DEFINE = "CLASS_DEFINE"
     CLASS_INSTANTIATION = "CLASS_INSTANTIATION"
@@ -96,7 +97,6 @@ BinaryOperators: Set = {
     "*",    # Multiplication
     "/",    # Division
     "%",    # Modulus
-    "**",   # Exponentiation
     "&",    # Bitwise AND
     "|",    # Bitwise OR
     "^",    # Bitwise XOR
@@ -109,7 +109,6 @@ BinaryOperators: Set = {
     "*=",  # Multiplication Assignment
     "/=",  # Division Assignment
     "%=",  # Modulus Assignment
-    "**=",  # Exponentiation Assignment
     "&=",  # Bitwise AND Assignment
     "|=",  # Bitwise OR Assignment
     "^=",  # Bitwise XOR Assignment
@@ -419,7 +418,7 @@ class BooleanCondition(_Condition):
 
 # Binary Expression Nodes (arithmetic, bitwise)
 class BinaryExpression(_Expression):
-    """Represents binary operations (+, -, *, /, %, **, &, |, ^, <<, >>)"""
+    """Represents binary operations (+, -, *, /, %, &, |, ^, <<, >>)"""
     def __init__(self, left: _ASTNode, op: str, right: _ASTNode):
         if op not in BinaryOperators:
             raise ValueError(f"Invalid binary operator: {op}")
@@ -444,7 +443,6 @@ class UnaryExpression(_Expression):
         op = '!' if self.op == 'not' else self.op
         return f"{op}{self.operand.To_CXX()}".strip()
 
-# `int x` -> `EspressoInt x;`
 class VarDeclare(_ASTNode):
     def __init__(self, 
                  var_name: Identifier,
@@ -455,68 +453,75 @@ class VarDeclare(_ASTNode):
         self.var_type = var_type
 
     def To_CXX(self) -> str:
-        mods = ' '.join(m.To_CXX() or "" for m in self.modifiers) if self.modifiers else ""
-        type_str = ConvertType(self.var_type.To_CXX())
-        return f"{mods} {type_str} {self.var_name.To_CXX()};".strip()
+        parts = []
+        if self.modifiers:
+            parts.append(' '.join(m.To_CXX() for m in self.modifiers))
+        parts.append(ConvertType(self.var_type.To_CXX()).strip())
+        parts.append(self.var_name.To_CXX())
+        return ' '.join(parts) + ';'
 
-# `int x = 5` -> `EspressoInt x = 5;`
 class VarAssign(_ASTNode):
     def __init__(self, 
                  var_name: Identifier,
-                 value: _Value,  # Now explicitly requires a Value node
+                 value: _Value,
                  var_type: Identifier,
                  modifiers: List[_Modifier] = []):
         super().__init__(NodeType.VAR_ASSIGN, modifiers=modifiers)
         self.var_name = var_name
-        self.value = value  # Guaranteed to be a Value node
+        self.value = value
         self.var_type = var_type
 
     def To_CXX(self) -> str:
-        type_str = f"{ConvertType(self.var_type.To_CXX())} " if self.var_type else ""
-        mods = ' '.join(m.To_CXX() or "" for m in self.modifiers) if self.modifiers else ""
-        return f"{mods}{type_str} {self.var_name.To_CXX()} = {self.value.To_CXX()};".strip()
+        parts = []
+        if self.modifiers:
+            parts.append(' '.join(m.To_CXX() for m in self.modifiers))
+        parts.append(ConvertType(self.var_type.To_CXX()).strip())
+        parts.append(self.var_name.To_CXX())
+        parts.append(f"= {self.value.To_CXX()}")
+        return ' '.join(parts) + ';'
 
-# `float xpos, ypos` -> `EspressoFloat xpos, ypos;`
 class MultiVarDeclare(_ASTNode):
-    """Represents multiple variable declarations in a single statement."""
     def __init__(self,
                 var_names: List[Identifier], 
                 var_type: Identifier, 
                 modifiers: List[_Modifier] = []):
         super().__init__(NodeType.MULTI_VAR_DECLARE, modifiers=modifiers)
-        self.var_names = [var_name for var_name in var_names]
-        self.var_type = var_type 
+        self.var_names = var_names
+        self.var_type = var_type
 
     def To_CXX(self) -> str:
-        mods = ' '.join(ConvertModifier(m) for m in self.modifiers) if self.modifiers else ""
-        type_str = ConvertType(self.var_type.To_CXX())
-        names_str = ', '.join(var.To_CXX() for var in self.var_names)
-        return f"{mods}{type_str} {names_str};".strip()
-    
-# `float xpos, ypos = 0.0` -> `EspressoFloat xpos = 0.0, ypos = 0.0;`
+        parts = []
+        if self.modifiers:
+            parts.append(' '.join(ConvertModifier(m) for m in self.modifiers))
+        parts.append(ConvertType(self.var_type.To_CXX()).strip())
+        parts.append(', '.join(var.To_CXX() for var in self.var_names))
+        return ' '.join(parts) + ';'
+
 class MultiVarAssign(_ASTNode):
-    """Represents multiple variable declarations in a single statement."""
     def __init__(self,
                 var_names: List[Identifier],
-                value: _Value,  # Now explicitly requires a Value node
+                value: _Value,
                 var_type: Identifier, 
                 modifiers: List[_Modifier] = []):
-        super().__init__(NodeType.MULTI_VAR_DECLARE, modifiers=modifiers)
-        self.var_names = [var_name if isinstance(var_name, Identifier) else Identifier(var_name) for var_name in var_names]
-        self.var_type = var_type if isinstance(var_type, Identifier) else Identifier(var_type)
+        super().__init__(NodeType.MULTI_VAR_ASSIGN, modifiers=modifiers)
+        self.var_names = var_names
+        self.var_type = var_type
         self.value = value
 
     def To_CXX(self) -> str:
-        mods = ' '.join(ConvertModifier(m) for m in self.modifiers) if self.modifiers else ""
-        type_str = ConvertType(self.var_type.To_CXX())
-        names_str = ', '.join(var.To_CXX() for var in self.var_names)
-        return f"{mods}{type_str} {names_str} = {self.value};".strip()
-
+        parts = []
+        if self.modifiers:
+            parts.append(' '.join(ConvertModifier(m) for m in self.modifiers))
+        parts.append(ConvertType(self.var_type.To_CXX()).strip())
+        parts.append(', '.join(var.To_CXX() for var in self.var_names))
+        parts.append(f"= {self.value.To_CXX()}")
+        return ' '.join(parts) + ';'
 
 # ==============================================
 # Literals
 # ==============================================
 
+# `1, 0.6, 0xDEADBEEF`
 class NumericLiteral(_Literal):
     """Minimal numeric literal that passes through with C++ suffixes"""
     def __init__(self, value: str):
@@ -527,6 +532,7 @@ class NumericLiteral(_Literal):
         """Pass through with underscores removed"""
         return self.raw_value.replace('_', '')
 
+# `{1, 0.6, 0xDEADBEEF}`
 class ItemContainerLiteral(_Literal):
     """Base class for list/set/tuple literals using uniform {} syntax"""
     def __init__(self, items: List[_ASTNode], delims : str = "{}"):
@@ -539,6 +545,7 @@ class ItemContainerLiteral(_Literal):
         items_str = ", ".join(item.To_CXX() for item in self.items)
         return f"{self.delims[0]}{items_str}{self.delims[1]}"
 
+# `{{"Renz", 1}, {"Henry Lee Hu", 2}}`
 class KVContainerLiteral(_Literal):
     """Base class for map literals using {{key, value}} syntax"""
     def __init__(self, pairs: List[Tuple[_ASTNode, _ASTNode]]):
@@ -552,6 +559,7 @@ class KVContainerLiteral(_Literal):
         )
         return f"{{{pairs_str}}}"
 
+# `"Hello, World!"`
 class NormalStringLiteral(_Literal):
     """Regular string literal with escape sequences"""
     def __init__(self, value: str):
@@ -566,6 +574,7 @@ class NormalStringLiteral(_Literal):
                 .replace('\t', '\\t'))
         return f'"{escaped}"'  # Keep as C++ string literal
 
+# `r"Hello\nWorld"`
 class RawStringLiteral(_Literal):
     """Raw string literal (no escape processing)"""
     def __init__(self, value: str):
@@ -574,6 +583,7 @@ class RawStringLiteral(_Literal):
     def To_CXX(self) -> str:
         return f'R"({self.value})"'
 
+# `f"Hello, ${name}"`
 class InterpolatedStringLiteral(_Literal):
     """F-string style interpolated string with ${var} or {expr} syntax"""
     def __init__(self, template: Union[str, List[Union[str, _ASTNode]]]):
@@ -640,6 +650,7 @@ class InterpolatedStringLiteral(_Literal):
                 args.append(part.To_CXX())
         return f'fmt::format("{"".join(format_parts)}", {", ".join(args)})'
 
+# `true, false`
 class BoolLiteral(_Literal):
     """Boolean literal (true/false)"""
     def __init__(self, value: bool):
@@ -649,18 +660,28 @@ class BoolLiteral(_Literal):
     def To_CXX(self) -> str:
         return "true" if self.value else "false"
 
+# `void`
 class VoidLiteral(_Literal):
     """Void literal (no value)"""
     def __init__(self):
-        super().__init__(NodeType.NONE_LITERAL)
+        super().__init__(NodeType.VOID_LITERAL)
 
     def To_CXX(self) -> str:
         return "void"
 
+
+class NullPtrLiteral(_Literal):
+    """Void literal (no value)"""
+    def __init__(self):
+        super().__init__(NodeType.NULLPTR_LITERAL)
+
+    def To_CXX(self) -> str:
+        return "void"
+
+
 # ==============================================
 # POP
 # ==============================================
-
 
 
 class FuncDeclParam(_ASTNode):
@@ -710,76 +731,31 @@ class FunctionCall(_Value, _ASTNode):
             else:
                 args.append(f"{param.value.To_CXX()}")
         
-        return f"{self.target.To_CXX()}({{{', '.join(args)}}})"
+        return f"{self.target.To_CXX()}({', '.join(args)})"
 
 class FunctionDecl(_ASTNode):
     def __init__(self, 
                  name: Identifier,
                  return_type: Identifier,
                  params: List[FuncDeclParam],
-                 body: Body = Body([]),
+                 body: Body = None,
                  modifiers: List[_Modifier] = []):
-        super().__init__(NodeType.FUNCTION_DECL, body=body)
+        super().__init__(NodeType.FUNCTION_DECL, body=body or Body([]))
         self.name = name if isinstance(name, Identifier) else Identifier(name)
         self.return_type = return_type if isinstance(return_type, Identifier) else Identifier(return_type)
         self.params = params
         self.modifiers = modifiers or []
 
     def To_CXX(self) -> str:
-        # Always generate both traditional and named versions
-        traditional = self._generate_traditional()
-        named = self._generate_named()
-        # Add this check to skip empty parameter structs
-        if not self.params:
-            return traditional  # Skip named version for parameter-less functions
-        return f"{traditional}\n\n{named}"
-
-    def _generate_traditional(self) -> str:
-        """Generate traditional C++ function"""
         param_list = ', '.join(p.To_CXX() for p in self.params)
         mods = ' '.join(ConvertModifier(m) for m in self.modifiers) if self.modifiers else ""
         body = self.body.To_CXX()
-        return f"{mods}{ConvertType(self.return_type.To_CXX())} {self.name.To_CXX()}({param_list}) {{\n{body}\n}}"
-
-    def _generate_named(self) -> str:
-        # 1. Generate parameter struct
-        struct_name = f"{self.name.To_CXX()}_Params"
-        struct_members = []
-        for param in self.params:
-            member = f"{ConvertType(param.param_type.To_CXX())} _{param.name.To_CXX()};"
-            struct_members.append(member)
+        return_type = ConvertType(self.return_type.To_CXX())
         
-        struct_def = f"struct {struct_name} {{'\n' + Body(struct_members, 1).To_CXX() + '\n'}};\n\n"
-
-        # 2. Generate function with struct parameter
-        mods = ' '.join(ConvertModifier(m) for m in self.modifiers) if self.modifiers else ""
-        fn_def = f"{mods}{ConvertType(self.return_type.To_CXX())} {self.name.To_CXX()}({struct_name} params) {{\n"
-        
-        # 3. Unpack parameters at start of function
-        param_unpacking = [
-            f"{ConvertType(p.param_type.To_CXX())} {p.name.To_CXX()} = params._{p.name.To_CXX()};"
-            for p in self.params
-        ]
-        
-        # 4. Add function body with proper indentation
-        # Ensure all elements are _ASTNode instances
-        full_body = []
-        for stmt in param_unpacking:
-            if isinstance(stmt, _ASTNode):
-                full_body.append(stmt)
-            else:
-                # Wrap string statements in a dummy node
-                class _RawStatement(_ASTNode):
-                    def __init__(self, code: str):
-                        super().__init__(NodeType.BODY)
-                        self.code = code
-                    def To_CXX(self) -> str:
-                        return self.code
-                full_body.append(_RawStatement(stmt))
-        full_body.extend(self.body.children)
-        fn_def += Body(full_body, 1).To_CXX() + "\n}"
-        
-        return struct_def + fn_def   
+        # Handle constructor special case
+        if self.name.To_CXX() == return_type:
+            return f"{mods}{self.name.To_CXX()}({param_list}) {{\n{body}\n}}"
+        return f"{mods}{return_type} {self.name.To_CXX()}({param_list}) {{\n{body}\n}}"
 
 class LambdaExpr(_Value, _ASTNode):
     def __init__(self, 
@@ -1055,454 +1031,3 @@ class Throw(_ASTNode):
     def To_CXX(self) -> str:
         return f"throw {self.exception.To_CXX()};"
 
-
-
-"""
-try use ASTL to make nodes from this espresso code
-class Vector:
-    float x, y
-
-    public:
-    func Vector(float x=0, float y=0):
-        this.x = x
-        this.y = y
-    
-    float func magnitude():
-        return float(sqrt(this.x**2 + this.y**2))
-    
-    Vector func operator+ (Vector other):
-        return Vector(this.x + other.x, this.y + other.y)
-    
-    string ToString():
-        return f"Vector(${this.x}, ${this.y})"
-
-int func CalcFactorial(n):
-    if not isinstance(n, int) or n < 0:
-        raise ValueError("Input must be non-negative integer")
-    return 1 if n <= 1 else n * CalcFactorial(n - 1)
-
-string func RiskyOperation():
-    if random::Random() > 0.5:
-        raise RuntimeError("Random failure!")
-    return "Success"
-
-int func Main():
-    // Test classes and operators
-    Vector v1 = Vector(3, 4)
-    Vector v2 = Vector(2, 5)
-    print(f"Vector sum: {v1 + v2}")
-    print(f"Magnitude: {v1.magnitude():.2f}")
-    
-    // Test recursion and error handling
-    try:
-        print(f"Factorial of 5: ${CalcFactorial(5)}")
-        print(f"Factorial of -1: ${CalcFactorial(-1)}")
-    catch ValueError:
-        print(f"Error: {ValueError::what()}")
-    
-    // Test random exceptions
-    for int i = 0; i < 5; i+=1:
-        try:
-            print(risky_operation())
-        catch RuntimeError:
-            print(f"Caught exception: ${RuntimeError::what()}")
-"""
-
-# Vector class definition
-vector_class = ClassNode(
-    name="Vector",
-    body=Body([
-        # Private fields
-        MultiVarDeclare(
-            var_names=[Identifier("x"), Identifier("y")],
-            var_type=Identifier("float")
-        ),
-        
-        # Public section
-        ClassDivider(
-            access="public",
-            body=Body([
-                # Constructor
-                FunctionDecl(
-                    name="Vector",
-                    return_type=Identifier("void"),
-                    params=[
-                        FuncDeclParam(
-                            name=Identifier("x"),
-                            param_type=Identifier("float"),
-                            default=NumericLiteral("0")
-                        ),
-                        FuncDeclParam(
-                            name=Identifier("y"),
-                            param_type=Identifier("float"),
-                            default=NumericLiteral("0")
-                        )
-                    ],
-                    body=Body([
-                        VarAssign(
-                            var_name=Identifier("this.x"),
-                            value=Identifier("x"),
-                            var_type=None
-                        ),
-                        VarAssign(
-                            var_name=Identifier("this.y"),
-                            value=Identifier("y"),
-                            var_type=None
-                        )
-                    ])
-                ),
-                
-                # magnitude() method
-                FunctionDecl(
-                    name= Identifier("magnitude"),
-                    return_type=Identifier("float"),
-                    params=[],
-                    body=Body([
-                        Return(
-                            FunctionCall(
-                                target="float",
-                                params=[
-                                    FuncCallParam(
-                                        FunctionCall(
-                                            target="math::sqrt",
-                                            params=[
-                                                FuncCallParam(
-                                                    value=BinaryExpression(
-                                                        left=BinaryExpression(
-                                                            left=Identifier("this.x"),
-                                                            op="**",
-                                                            right=NumericLiteral("2")
-                                                        ),
-                                                        op="+",
-                                                        right=BinaryExpression(
-                                                            left=Identifier("this.y"),
-                                                            op="**",
-                                                            right=NumericLiteral("2")
-                                                        )
-                                                    )     
-                                                )
-                                            ]
-                                        )
-                                    )
-                                ]
-                            )
-                        )
-                    ])
-                ),
-                
-                # operator+ method
-                FunctionDecl(
-                    name=Identifier("operator+"),
-                    return_type=Identifier("Vector"),
-                    params=[
-                        FuncDeclParam(
-                            name=Identifier("other"),
-                            param_type=Identifier("Vector")
-                        )
-                    ],
-                    body=Body([
-                        Return(
-                            FunctionCall(
-                                target="Vector",
-                                params=[
-                                    FuncCallParam(
-                                        BinaryExpression(
-                                            left=Identifier("this.x"),
-                                            op="+",
-                                            right=Identifier("other.x")
-                                        )
-                                    ),
-                                    FuncCallParam(
-                                        BinaryExpression(
-                                            left=Identifier("this.y"),
-                                            op="+",
-                                            right=Identifier("other.y")
-                                        )
-                                    )
-                                ]
-                            )
-                        )
-                    ])
-                ),
-                
-                # ToString() method
-                FunctionDecl(
-                    name=Identifier("ToString"),
-                    return_type=Identifier("string"),
-                    params=[],
-                    body=Body([
-                        Return(
-                            InterpolatedStringLiteral(
-                                template='Vector(${this.x}, ${this.y})'
-                            )
-                        )
-                    ])
-                )
-            ])
-        )
-    ])
-)
-
-# CalcFactorial function
-calc_factorial = FunctionDecl(
-    name="CalcFactorial",
-    return_type=Identifier("int"),
-    params=[
-        FuncDeclParam(
-            name=Identifier("n"),
-            param_type=Identifier("int")
-        )
-    ],
-    body=Body([
-        IfExpr(
-            condition=BooleanCondition(
-                op="or",
-                operands=[
-                    UnaryExpression(
-                        op="not",
-                        operand=FunctionCall(
-                            target="isinstance",
-                            params=[
-                                FuncCallParam(Identifier("n")),
-                                FuncCallParam(Identifier("int"))
-                            ]
-                        )
-                    ),
-                    Comparison(
-                        left=Identifier("n"),
-                        op="<",
-                        right=NumericLiteral("0")
-                    )
-                ]
-            ),
-            body=Body([
-                Throw(
-                    FunctionCall(
-                        target="ValueError",
-                        params=[
-                            FuncCallParam(
-                                NormalStringLiteral("Input must be non-negative integer")
-                            )
-                        ]
-                    )
-                )
-            ]),
-            else_body=Body([
-                Return(
-                    TernaryExpr(
-                        condition=Comparison(
-                            left=Identifier("n"),
-                            op="<=",
-                            right=NumericLiteral("1")
-                        ),
-                        true_expr=NumericLiteral("1"),
-                        false_expr=BinaryExpression(
-                            left=Identifier("n"),
-                            op="*",
-                            right=FunctionCall(
-                                target="CalcFactorial",
-                                params=[
-                                    FuncCallParam(
-                                        BinaryExpression(
-                                            left=Identifier("n"),
-                                            op="-",
-                                            right=NumericLiteral("1")
-                                        )
-                                    )
-                                ]
-                            )
-                        )
-                    )
-                )
-            ])
-        )
-    ])
-)
-
-# RiskyOperation function
-risky_operation = FunctionDecl(
-    name="RiskyOperation",
-    return_type=Identifier("string"),
-    params=[],
-    body=Body([
-        IfExpr(
-            condition=Comparison(
-                left=FunctionCall(
-                    target="random::Random",
-                    params=[]
-                ),
-                op=">",
-                right=NumericLiteral("0.5")
-            ),
-            body=Body([
-                Throw(
-                    FunctionCall(
-                        target="RuntimeError",
-                        params=[
-                            FuncCallParam(
-                                NormalStringLiteral("Random failure!")
-                            )
-                        ]
-                    )
-                )
-            ]),
-            else_body=Body([
-                Return(
-                    NormalStringLiteral("Success")
-                )
-            ])
-        )
-    ])
-)
-
-# Main function
-main_function = FunctionDecl(
-    name=Identifier("Main"),
-    return_type=Identifier("int"),
-    params=[],
-    body=Body([
-        # Vector tests
-        VarAssign(
-            var_name=Identifier("v1"),
-            value=FunctionCall(
-                target="Vector",
-                params=[
-                    FuncCallParam(NumericLiteral("3")),
-                    FuncCallParam(NumericLiteral("4"))
-                ]
-            ),
-            var_type=Identifier("Vector")
-        ),
-        VarAssign(
-            var_name=Identifier("v2"),
-            value=FunctionCall(
-                target="Vector",
-                params=[
-                    FuncCallParam(NumericLiteral("2")),
-                    FuncCallParam(NumericLiteral("5"))
-                ]
-            ),
-            var_type=Identifier("Vector")
-        ),
-        FunctionCall(
-            target="print",
-            params=[
-                FuncCallParam(
-                    InterpolatedStringLiteral(
-                        template='Vector sum: ${v1 + v2}'
-                    )
-                )
-            ]
-        ),
-        FunctionCall(
-            target=Identifier("print"),
-            params=[
-                FuncCallParam(
-                    InterpolatedStringLiteral(
-                        template='Magnitude: ${v1.magnitude():.2f}'
-                    )
-                )
-            ]
-        ),
-        
-        # Factorial tests
-        TryCatch(
-            try_body=Body([
-                FunctionCall(
-                    target="print",
-                    params=[
-                        FuncCallParam(
-                            InterpolatedStringLiteral(
-                                template='Factorial of 5: ${CalcFactorial(5)}'
-                            )
-                        )
-                    ]
-                ),
-                FunctionCall(
-                    target="print",
-                    params=[
-                        FuncCallParam(
-                            InterpolatedStringLiteral(
-                                template='Factorial of -1: ${CalcFactorial(-1)}'
-                            )
-                        )
-                    ]
-                )
-            ]),
-            catch_blocks=[
-                (Identifier("ValueError"), Body([
-                    FunctionCall(
-                        target="print",
-                        params=[
-                            FuncCallParam(
-                                InterpolatedStringLiteral(
-                                    template='Error: ${ValueError::what()}'
-                                )
-                            )
-                        ]
-                    )
-                ]))
-            ]
-        ),
-        
-        # Random exception tests
-        CStyleForLoop(
-            init=VarAssign(
-                var_name=Identifier("i"),
-                value=NumericLiteral("0"),
-                var_type=Identifier("int")
-            ),
-            condition=Comparison(
-                left=Identifier("i"),
-                op="<",
-                right=NumericLiteral("3")
-            ),
-            update=BinaryExpression(
-                left=Identifier("i"),
-                op="+=",
-                right=NumericLiteral("1")
-            ),
-            body=Body([
-                TryCatch(
-                    try_body=Body([
-                        FunctionCall(
-                            target="print",
-                            params=[
-                                FuncCallParam(
-                                    FunctionCall(
-                                        target="risky_operation",
-                                        params=[]
-                                    )
-                                )
-                            ]
-                        )
-                    ]),
-                    catch_blocks=[
-                        (Identifier("RuntimeError"), Body([
-                            FunctionCall(
-                                target="print",
-                                params=[
-                                    FuncCallParam(
-                                        InterpolatedStringLiteral(
-                                            template='Caught exception: ${RuntimeError::what()}'
-                                        )
-                                    )
-                                ]
-                            )
-                        ]))
-                    ]
-                )
-            ])
-        )
-    ])
-)
-
-# Full program AST
-program_ast = Body([
-    vector_class,
-    calc_factorial,
-    risky_operation,
-    main_function
-], 0)
-
-print(program_ast.To_CXX())  # For debugging, prints the generated C++ code

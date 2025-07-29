@@ -1,7 +1,28 @@
 {
     "files.associations": {
         "string": "cpp",
-        "vector": "cpp"
+        "vector": "cpp",
+        "text_encoding": "cpp",
+        "charconv": "cpp",
+        "chrono": "cpp",
+        "optional": "cpp",
+        "format": "cpp",
+        "ranges": "cpp",
+        "ratio": "cpp",
+        "system_error": "cpp",
+        "array": "cpp",
+        "functional": "cpp",
+        "tuple": "cpp",
+        "type_traits": "cpp",
+        "utility": "cpp",
+        "limits": "cpp",
+        "string_view": "cpp",
+        "cstdint": "cpp",
+        "compare": "cpp",
+        "typeinfo": "cpp",
+        "future": "cpp",
+        "new": "cpp",
+        "stdexcept": "cpp"
     },
     "python.analysis.autoImportCompletions": true
 }

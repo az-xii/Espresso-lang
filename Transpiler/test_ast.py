@@ -1,5 +1,5 @@
 from re import A
-from AST import *
+from ASTL import *
 
 program = Body([])
 
@@ -46,12 +46,12 @@ program.add_statement(
                         value=FunctionCall(
                             target=Identifier("Vector"),
                             params=[
-                                FuncCallParam(value=ArithmeticExpression(
+                                FuncCallParam(value=BinaryExpression(
                                     left=Identifier("this.x"),
                                     operator="+",
                                     right=Identifier("other.x")
                                 )),
-                                FuncCallParam(value=ArithmeticExpression(
+                                FuncCallParam(value=BinaryExpression(
                                     left=Identifier("this.y"),
                                     operator="+",
                                     right=Identifier("other.y")
@@ -85,14 +85,14 @@ program.add_statement(
                         value=FunctionCall(
                             target=Identifier("Math::Sqrt"),
                             params=[
-                                FuncCallParam(value=ArithmeticExpression(
-                                    left=ArithmeticExpression(
+                                FuncCallParam(value=BinaryExpression(
+                                    left=BinaryExpression(
                                         left=Identifier("this.x"),
                                         operator="*",
                                         right=Identifier("this.x")
                                     ),
                                     operator="+",
-                                    right=ArithmeticExpression(
+                                    right=BinaryExpression(
                                         left=Identifier("this.y"),
                                         operator="*",
                                         right=Identifier("this.y")
@@ -125,13 +125,13 @@ program.add_statement(
                         right=Literal(1)
                     ),
                     true_value=Literal(1),
-                    false_value=ArithmeticExpression(
+                    false_value=BinaryExpression(
                         left=Identifier("n"),
                         operator="*",
                         right=FunctionCall(
                             target=Identifier("calculate_factorial"),
                             params=[
-                                FuncCallParam(value=ArithmeticExpression(
+                                FuncCallParam(value=BinaryExpression(
                                     left=Identifier("n"),
                                     operator="-",
                                     right=Literal(1)
@@ -178,7 +178,7 @@ program.add_statement(
                         value=InterpolatedStringLiteral(
                             parts=[
                                 "Vector sum:",
-                                ArithmeticExpression(
+                                BinaryExpression(
                                     left=Identifier("v1"),
                                     operator="+",
                                     right=Identifier("v2")
@@ -195,7 +195,7 @@ program.add_statement(
                         value=InterpolatedStringLiteral(
                             parts=[
                                 "Vector sum:",
-                                ArithmeticExpression(
+                                BinaryExpression(
                                     left=Identifier("v1"),
                                     operator="+",
                                     right=Identifier("v2")
@@ -212,7 +212,7 @@ program.add_statement(
                         value=InterpolatedStringLiteral(
                             parts=[
                                 "Vector sum:",
-                                ArithmeticExpression(
+                                BinaryExpression(
                                     left=Identifier("v1"),
                                     operator="+",
                                     right=Identifier("v2")
