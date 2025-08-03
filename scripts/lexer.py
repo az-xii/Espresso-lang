@@ -1,7 +1,5 @@
+#! venv/bin/python
 from lark import Lark, Token
-import os
-import re
-import json
 GRAMMAR_CONTENT = r'''
 start: (statement | NEWLINE)*
 
@@ -210,7 +208,7 @@ GREATER_EQUAL: ">="
 // Structural
 INDENT: "INDENT"
 DEDENT: "DEDENT"
-COMMENT: "//"[^\n]*              // Single-line: // comment
+COMMENT: "//"(\n)*?             // Single-line: // comment
       | "/*"(.|\n)*?"*/"         // Multi-line: /* ... */
 DECOR: /@[a-zA-Z_][a-zA-Z0-9_]*/
 ID: /[a-zA-Z_][a-zA-Z0-9_]*/
@@ -578,28 +576,28 @@ class IndentationLexer:
 def main():
     parser = Lark(GRAMMAR_CONTENT, parser="lalr", lexer="basic", start="start")
     lexer = IndentationLexer(parser)
-    printtojson = False 
     source_code = r"""
-@def MAX 1000
-@const
-double PI = MAX;
+func main() -> int {
+    io::Output("Hello, world!")
 
-@namespace ESA {
-    func Hello() -> void {
-        io::Output("hi");
-    }
+    // Input example
+    string name = io::Input("Enter your name: ")
+    io::Output($"Hello, {name}!")
+
+    // Write to file
+    string data = "Sample data\nSecond line"
+    io::File file = Open("output.text", "rw")
+
+    // Read from file
+    string content = file.Read()
+    io::Output("File content:")
+    io::Output(content)
+    return 0
 }
-
-ESA::Hello();
-
 """
 
     try:
         tokens = lexer.lex_with_indentation(source_code)
-
-        script_dir = os.path.dirname(__file__)
-        output_path = os.path.join(script_dir, "tokens.json")
-
         for token in tokens:
             print(f"{token.type}: {token.value}")
 

@@ -22,7 +22,8 @@
         "typeinfo": "cpp",
         "future": "cpp",
         "new": "cpp",
-        "stdexcept": "cpp"
+        "stdexcept": "cpp",
+        "iosfwd": "cpp"
     },
     "python.analysis.autoImportCompletions": true
 }

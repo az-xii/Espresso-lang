@@ -7,6 +7,7 @@
 #include <string>
 #include <utility>
 #include <cmath>
+#include <functional>
 #include "./forward_decl.hpp"
 
 // ============== INTEGER TYPE CLASS ==============
@@ -496,12 +497,10 @@ public:
     }
 };
 
-// Common fixed-point types
 using EspressoFixed16_16 = espresso_fixed<int32_t, 16>;
 using EspressoFixed32_32 = espresso_fixed<int64_t, 32>;
 using EspressoUFixed16_16 = espresso_fixed<uint32_t, 16>;
 
-// Literal operator
 constexpr EspressoFixed16_16 operator""fx1616(long double v) {
     return EspressoFixed16_16{v};
 }
@@ -519,3 +518,13 @@ using EspressoBool = bool;
 using EspressoVoid = void;
 using EspressoNullptr = std::nullptr_t;
 
+template<typename Ret, typename... Args>
+struct EspressoLambda {
+    std::function<Ret(Args...)> fn;
+
+    EspressoLambda(std::function<Ret(Args...)> f) : fn(f) {}
+
+    Ret operator()(Args... args) const {
+        return fn(args...);
+    }
+};

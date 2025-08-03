@@ -29,11 +29,13 @@ class EspressoBool;
 class EspressoVoid;
 class EspressoNullptr;
 
-// Forward declare character type
+// Forward declare text types
 class EspressoChar;
-
-// Forward declare string type
 class EspressoString;
+
+// Forward declare lambda
+template<typename Ret, typename... Args>
+struct EspressoLambda;
 
 // Forward declare exception types
 class Error : public std::exception { /* Base for all errors */ };
@@ -51,7 +53,7 @@ class InfinityError : public RuntimeError {};        // Infinite result
 // Forward declare type system exceptions
 class TypeError : public RuntimeError {};            // General type issues
 class CastError : public TypeError {};               // Failed type cast
-class NullReferenceError : public TypeError {};      // Null access
+class NullReferenceError : public TypeError {};       // Null access
 class GenericInstantiationError : public TypeError {}; // Bad template instantiation
 
 // Forward declare text/encoding exceptions
@@ -66,22 +68,11 @@ class KeyError : public RuntimeError {};             // Missing map key
 class CapacityError : public RuntimeError {};        // Container full
 class EmptyContainerError : public RuntimeError {};  // pop() on empty
 
-// Forward declare memory/resource exceptions
-class MemoryError : public RuntimeError {};          // Allocation failed
-class StackOverflowError : public RuntimeError {};   // Call stack exhausted
-class HeapOverflowError : public RuntimeError {};    // Dynamic memory exhausted
-class ResourceError : public RuntimeError {};        // Files, sockets, etc.
-
 // Forward declare io exceptions
 class IOError : public RuntimeError {};              // General I/O failure
 class FileNotFoundError : public IOError {};         // Missing file
 class PermissionError : public IOError {};           // Access denied
 class EOFError : public IOError {};                  // Unexpected end of file
-
-// Forward declare special cases
-class NotImplementedError : public LogicError {};    // Unimplemented feature
-class AssertionError : public LogicError {};         // Assertion failed
-class SyntaxError : public LogicError {};            // Code parsing errors (compile-time)
 
 // Forward declare container templates
 template <typename T>

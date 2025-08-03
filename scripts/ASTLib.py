@@ -125,7 +125,7 @@ UnaryOperators: Set = {
 
 
 # list[int] -> EspressoList<EspressoInt>
-TYPE_MAP : Dict = {
+TYPE_MAP : dict = {
     # Espresso | C++
     "byte": "EspressoByte", # 8-bit signed integer
     "short" : "EspressoShort", # 16-bit signed integer
@@ -137,7 +137,7 @@ TYPE_MAP : Dict = {
     "ushort" : "EspressoShort", # 16-bit unsigned integer
     "uint": "EspressoUInt", # 32-bit unsigned integer
     "ulong": "EspressoULong", # 64-bit unsigned integer
-    "dulong": "EspressoULongLong", # 128-bit unsigned integer
+    "ulonglong": "EspressoULongLong", # 128-bit unsigned integer
 
     "float8": "EspressoFloat8", # 8-bit floating point
     "float16": "EspressoFloat16", # 16-bit floating point
@@ -372,6 +372,78 @@ def ConvertModifier(modifier: _Modifier) -> str:
         return MOD_MAP[type(modifier)]
     raise ValueError(f"Unknown modifier type: {type(modifier)}")
 
+
+
+
+class AnnotationDefine(Annotation):
+    """Represents a DEFINE annotation."""
+    def __init__(
+            self, 
+            name: Union[str, "Identifier"],
+            value: "_Literal"):
+        super().__init__(NodeType.ANNOTATION_DEFINE, value=value)
+        self.value = value
+        self.name = name if isinstance(name, Identifier) else Identifier(name)
+
+    def To_CXX(self) -> str:
+        return f"#DEFINE {self.name.To_CXX()} {self.value.To_CXX()}"
+
+class AnnotationAssert(Annotation):
+    """Represents an ASSERT annotation that generates runtime checks."""
+    def __init__(self, condition: "_Value"):
+        super().__init__(NodeType.ANNOTATION_ASSERT)
+        self.condition = condition
+        # Handle different message types
+
+    def To_CXX(self) -> str:
+        # If no message, use standard assert
+        return f"assert({self.condition.To_CXX()});"
+
+    
+class AnnotationIO(Annotation):
+    """Represents an IO operation"""
+    def __init__(self):
+        super().__init__(NodeType.ANNOTATION_IO)
+
+    def To_CXX(self):
+        return "//IO:"
+
+class AnnotationSafe(Annotation):
+    """Unsafe operations"""
+    def __init__(self):
+        super().__init__(NodeType.ANNOTATION_SAFE)
+
+    def To_CXX(self):
+        return f"//SAFE:"
+
+class AnnotationUnsafe(Annotation):
+    """Unsafe operations"""
+    def __init__(self):
+        super().__init__(NodeType.ANNOTATION_UNSAFE)
+
+    def To_CXX(self):
+        return f"//UNSAFE:"
+
+class AnnotationPanic(Annotation):
+    """Intentional Crash"""
+    def __init__(self, value: "_Literal"):
+        super().__init__(NodeType.ANNOTATION_PANIC, value=value)
+
+    def To_CXX(self):
+        return f"abort({self.value})"
+    
+class AnnotationNamespace(Annotation):
+    """Nampespace"""
+    def __init__(self, ns_name: Union[str, "Identifier"], children: Union[List["_ASTNode"], "Body"]):
+        super().__init__(NodeType.ANNOTATION_NAMESPACE, value=ns_name if isinstance(ns_name, Identifier) else Identifier(ns_name))
+        self.body = children if isinstance(children, Body) else Body(children or [], 1)
+
+    def To_CXX(self):
+        ns_name = self.value.To_CXX() if self.value is not None else ""
+        return f"namespace {ns_name} {{\n{self.body.To_CXX()}\n}}"
+
+
+
 # ==============================================
 # Basic Syntax Nodes
 # ==============================================
@@ -585,14 +657,10 @@ class RawStringLiteral(_Literal):
 
 # `f"Hello, ${name}"`
 class InterpolatedStringLiteral(_Literal):
-    """F-string style interpolated string with ${var} or {expr} syntax"""
-    def __init__(self, template: Union[str, List[Union[str, _ASTNode]]]):
-        super().__init__(NodeType.F_STRING_LITERAL, value=template if isinstance(template, str) else "")
-        
-        if isinstance(template, str):
-            self.parts = self._parse_template(template)
-        else:
-            self.parts = template
+    """f-string style literal with f"text ${expr} more text" syntax"""
+    def __init__(self, template: str):
+        super().__init__(NodeType.F_STRING_LITERAL, value=template)
+        self.parts = self._parse_template(template)
 
     def _parse_template(self, template: str) -> List[Union[str, _ASTNode]]:
         parts = []
@@ -615,22 +683,6 @@ class InterpolatedStringLiteral(_Literal):
                     expr = template[start:j-1]
                     parts.append(Identifier(expr))
                 i = j
-            elif template[i] == '{':
-                if current:
-                    parts.append(current)
-                    current = ""
-                # Find matching }
-                start = i + 1
-                count = 1
-                j = start
-                while j < len(template) and count > 0:
-                    if template[j] == '{': count += 1
-                    if template[j] == '}': count -= 1
-                    j += 1
-                if count == 0:
-                    expr = template[start:j-1]
-                    parts.append(Identifier(expr))
-                i = j
             else:
                 current += template[i]
                 i += 1
@@ -641,12 +693,12 @@ class InterpolatedStringLiteral(_Literal):
     def To_CXX(self) -> str:
         format_parts = []
         args = []
-        for i, part in enumerate(self.parts):
+        for part in self.parts:
             if isinstance(part, str):
                 # Escape curly braces in literal parts
                 format_parts.append(part.replace('{', '{{').replace('}', '}}'))
             else:
-                format_parts.append(f'{{{i}}}')
+                format_parts.append("{}")
                 args.append(part.To_CXX())
         return f'fmt::format("{"".join(format_parts)}", {", ".join(args)})'
 
@@ -682,7 +734,6 @@ class NullPtrLiteral(_Literal):
 # ==============================================
 # POP
 # ==============================================
-
 
 class FuncDeclParam(_ASTNode):
     """Represents a single parameter in function declaration with default value"""
@@ -923,27 +974,21 @@ class TernaryExpr(_Value, _ASTNode):
     def To_CXX(self) -> str:
         return f"{self.condition.To_CXX()} ? {self.true_expr.To_CXX()} : {self.false_expr.To_CXX()}"
 
-class MatchExpr(_ASTNode):
-    def __init__(self, value: _ASTNode, arms: List[Tuple[_ASTNode, Body]], else_body: Body = []):
-        super().__init__(NodeType.MATCH_EXPR)
-        self.value = value
-        self.arms = [(pattern if isinstance(pattern, _ASTNode) else Identifier(str(pattern)),
-                     body if isinstance(body, Body) else Body(body or [], 1)) for pattern, body in arms]
-        self.else_body = else_body if isinstance(else_body, Body) else Body(else_body or [], 1) if else_body else None
+class Case(_ASTNode):
+    """Case syntax"""
+    def __init__(self, case: _Value, body: Body):
+        super().__init__(NodeType.CASE, case, body)
 
-    def To_CXX(self) -> str:
-        val = self.value.To_CXX()
-        code = ""
-        for i, (pattern, body) in enumerate(self.arms):
-            cond = f"{val} == {pattern.To_CXX()}"
-            if i == 0:
-                code += f"if ({cond}) {{\n{body.To_CXX()}\n}}"
-            else:
-                code += f" else if ({cond}) {{\n{body.To_CXX()}\n}}"
-        if self.else_body:
-            code += f" else {{\n{self.else_body.To_CXX()}\n}}"
-        return code
+    def To_CXX(self):
+        return "case {self.case.To_CXX()}:\n{self.body.To_CXX()}"
 
+class Switch(_ASTNode):
+    """Switch case syntax"""
+    def __init__(self, subject: _Value, cases: Body):
+        super().__init__(NodeType.Switch, value=subject, body=cases)
+
+    def To_CXX(self):
+        return "switch({self.subject.To_CXX()}) \{\n{self.body.To_CXX()}\}"
 
 # ==============================================
 # Loops
