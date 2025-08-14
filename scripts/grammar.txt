@@ -2,6 +2,7 @@ Keywords:
 func
 class
 this
+super
 private
 public
 protected
@@ -36,7 +37,6 @@ byte
 short
 int
 long
-dlong
 ubyte
 ushort
 uint
@@ -44,13 +44,10 @@ ulong
 ulonglong
 float
 double
-decimal
 fixed16_16
 fixed32_32
 ufixed16_16
-bin
-hex
-oct
+char
 string
 bool
 void
@@ -62,24 +59,7 @@ set
 tuple
 auto
 union
-
-Suffixes:
-i8
-i16
-i32
-i64
-i128
-u8
-u16
-u32
-u64
-u128
-f32
-f64
-f128
-fx1616
-fx3232
-ufx1616
+lambda
 
 Decorators:
 @include
@@ -165,4 +145,467 @@ Operators:
 >=
 <=
 !=
+
+
+I am designing a programming language called **Espresso**.
+It is a high-level, statically typed language that compiles to **C++** via a Python-based toolchain.
+
+---
+
+### **Workflow**
+
+```
+source.espresso
+   ↓
+Tokenisation in Python (Lark)
+   ↓
+Semantic analysis
+   ↓
+AST builder (ASTL.py)
+   ↓
+out.cpp (includes espresso_runtime.hpp)
+   ↓
+g++ → executable
+```
+
+The `espresso_runtime.hpp` header implements **custom composite types**, runtime helpers, and safe type utilities.
+
+---
+
+## **Language Features**
+
+### **Custom Types in Runtime**
+
+* `template<T> class List;` — Homogeneous container (`std::vector<T>`)
+* `class Collection;` — Heterogeneous container (`std::vector<std::any>`)
+* `Map`, `Tuple`, `Union` — STL wrappers
+* `Error` hierarchy for exceptions
+* All **user-defined classes** auto-inherit `EspressoObj<T>` for:
+
+  * `type()` introspection
+  * `isinstance<T>(obj)` checks
+
+---
+
+### **Proposed Type Map**
+
+| Espresso     | C++ Equivalent          |
+| ------------ | ----------------------- |
+| `byte`       | `int8_t`                |
+| `short`      | `int16_t`               |
+| `int`        | `int32_t`               |
+| `long`       | `int64_t`               |
+| `u_byte`     | `uint8_t`               |
+| `u_short`    | `uint16_t`              |
+| `u_int`      | `uint32_t`              |
+| `u_long`     | `uint64_t`              |
+| `float`      | `float32`               |
+| `double`     | `float64`               |
+| `fx16`       | `int32_t` (fixed point) |
+| `fx32`       | `int64_t` (fixed point) |
+| `list<T>`    | `List<T>`               |
+| `union<A,B>` | `Union<A,B>`            |
+| `collection` | `Collection`            |
+
+---
+
+### **Syntax Rules**
+
+#### **Pointers and Refernces**
+
+* Espresso supports references `int&` and pointers `int*`
+* Espresso also supports `->` and `.` syntax for members
+
+
+#### **Functions**
+
+```espresso
+func add(int a, int b) -> int {
+    return a + b
+}
+```
+
+Shorthand for main:
+
+```espresso
+main:
+    // code here
+```
+
+---
+
+#### **Generics**
+
+* Class-level generics:
+
+```espresso
+class Foo<T> {
+    T value
+    public Foo: value(value) {}
+}
+```
+
+* Method-level generics:
+
+```espresso
+public func bar<U> {
+    return cast<U>(value)
+}
+```
+
+---
+
+#### **Safe Cast Function**
+
+```cpp
+template <typename T, typename U>
+T cast(const U& obj) {
+    if constexpr (requires { obj.operator T(); }) {
+        return obj.operator T();  // Use operator T if available
+    }
+    else if constexpr (std::is_convertible_v<U, T>) {
+        return static_cast<T>(obj);  // Fall back to standard conversion
+    }
+    else {
+        throw CastingError("Conversion failed");
+    }
+}
+```
+
+* Available as global `cast<T>(obj)` in Espresso.
+
+---
+
+#### **Control Flow**
+
+* `if / elif / else`
+* `while`
+* `do-while`
+* `try / except / finally`
+* `for-in`
+* `switch-case`
+* C-style for loops with commas:
+
+```espresso
+for int i = 0, i < 10, i += 1 {
+    ...
+}
+```
+
+---
+
+#### **Decorators**
+
+* `@include <iostream>` or `@include "myheader.hpp"`
+* `@using namespace io` or `@using result = union<void, Error>`
+* `@namespace myspace { ... }`
+* `@assert(expr)` — compile/runtime assert
+* `@define G = 9.8`
+* `@panic` — abort immediately
+* `@cpp { ... }` — raw C++ block
+* `@operator[op] { ... }` — operator overloading
+* `@cast(type) { ... }` — explicit cast operator
+
+---
+
+#### **Strings**
+
+* Interpolation: `$"Hello, {name}!"`
+* Raw: `R"(Hello\nworld)"`
+
+---
+
+### **Semicolon Rules**
+
+* No semicolons at end of lines/blocks unless inside `@cpp`.
+
+---
+
+## **CLI Usage**
+
+```
+espresso [options]
+
+Options:
+  --compile --src <file>                 Compile to executable
+  --compile-esp32 --src <file>           Compile for ESP32 target
+  --compile-pico --src <file>            Compile for Raspberry Pi Pico
+  --compile-rpi --enable-wifi --src <file> Compile for Raspberry Pi w/ WiFi support
+  --repl                                 Start interactive REPL mode
+```
+
+Examples:
+
+```
+espresso --run --src main.espresso utils.cpp
+espresso --compile-esp32 --src firmware.espresso
+espresso --repl
+```
+
+---
+
+## Example Code
+
+// ==== Level 1. Hello World (Basic I/O) ====
+@include <iostream>
+main:
+    io::Output("Hello, world!")
+
+    // Input example
+    string name = io::Input("Enter your name: ")
+    io::Output($"Hello, {name}!")
+
+    // Write to file
+    string data = "Sample data\nSecond line"
+    io::File file = Open("output.text", "rw")
+
+    // Read from file
+    string content = file.Read()
+    io::Output("File content:")
+    io::Output(content)
+    return 0
+
+
+
+// ==== Level 2. Fibonacci Sequence ====
+func main() -> int { // or `main:`
+    list<int> nums = [0, 1]  // Explicit type
+
+    for int i = 1, i <= 100, i += 1 {
+        int now = nums[i]
+        int prev = nums[i - 1]
+        nums.append(now + prev)
+    }
+
+    io::Output($"Fibonacci Sequence ({nums.Size} terms):")
+    io::Output(nums.Join(", "))
+    return 0
+}
+
+
+// ==== Level 3. Rocket Simulator ====
+@include "Space"
+@using namespace Space
+
+enum LaunchError { Success, FuelLow, EngineFailure }
+
+class Rocket<T> {
+    string name
+    double fuel
+    bool is_launched = false
+    public T payload
+
+    public func Rocket(string name, double fuel, T payload) {
+        this->name = name
+        this->fuel = fuel
+        this->payload = payload
+    }
+
+    public func Launch() -> LaunchError? {
+        try {
+            Hardware::Ignite()
+        } except (Error) {
+            return LaunchError::EngineFailure
+        }
+
+        fuel -= 75.0
+        is_launched = true
+
+        return fuel <= 20.0 ? LaunchError::FuelLow : void
+    }
+}
+
+class Satellite {
+    string name
+    
+    public:
+    func Satellite(string name) {
+        this->name = name
+    }
+
+    func Activate() {
+        io::Output($"Hello from ${name}!")
+    }
+}
+
+main:
+    Rocket<Satellite> rocket = Rocket("MilkyWay1", 100.0, Satellite("Coffee"))
+
+    switch rocket.Launch() {
+        case void => {
+            rocket.payload.Activate()
+        }
+        case LaunchError err => {
+            io::Output($"Launch failed: ${err}")
+        }
+    }
+
+    return 0
+
+
+
+// ==== Level 4. Kinematics ====
+
+class Vector3 {
+    public:
+    double x, y, z
+
+    func Vector3(double x = 0, double y = 0, double z = 0) : x(x), y(y), z(z) {}
+
+    func Cross(Vector3 other) -> Vector3 {
+        return Vector3(
+            this->y * other.z - this->z * other.y,
+            this->z * other.x - this->x * other.z,
+            this->x * other.y - this->y * other.x
+        )
+    }
+
+    @operator+(Vector3 other) -> Vector3 {
+        return Vector3(
+            this->x + other.x,
+            this->y + other.y,
+            this->z + other.z
+        )
+    }
+
+    @operator*(double scalar) -> Vector3 {
+        return Vector3(
+            this->x * scalar,
+            this->y * scalar,
+            this->z * scalar
+        )
+    }
+
+    @operator-() -> Vector3 {
+        return Vector3(-this->x, -this->y, -this->z)
+    }
+}
+
+
+class RigidBody {
+    Vector3 position, velocity, acceleration
+    double mass
+    
+    func Update(float dt) -> void {
+        @assert(dt > 0)
+        velocity += acceleration * dt
+        position += velocity * dt
+        acceleration = Vector3()  // Reset
+    }
+    
+    func ApplyForce(Vector3 force) -> void{
+        acceleration += force / mass
+    }
+}
+
+func main() -> int {
+    RigidBody body = RigidBody(
+        position = Vector3(0, 10, 0),
+        mass = 2.0
+    )
+
+    Vector3 gravity = Vector3(0, -9.8, 0)
+    float timestep = 0.016f32  // ~60fps
+
+    for int frame in math::Range(0, 100):
+        body.ApplyForce(gravity * body.mass)
+        body.Update(timestep)
+        io::Output($"Frame {frame}: Position = {body.position.ToString()}")
+    return 0
+}
+
+// ==== Level 5. Game Entities ====
+
+class Entity {
+    virtual func GetName() -> string = 0 // Override necessary
+    virtual func Update() -> void { io::Output("Update!") } // Override not necessary
+}
+
+class Player : public Entity {
+    string name
+    Vector3 position
+    
+    public:
+    Player(string name) {
+        this->name = name
+    }
+
+    override func GetName() -> string {
+        return $"Player: {this->name}"
+    }
+
+    override func Update() -> void {
+        position += Vector3(1, 0, 0)  // Move right
+    }
+}
+
+class Enemy : public Entity {
+    override func GetName() -> string {
+        return "Enemy"
+    }
+    
+    override func Update() {
+        // AI logic here...
+    }
+}
+
+func main() -> int {
+    // Game loop
+    list<Entity> entities = [
+        Player("Alice"),
+        Enemy(),
+        Player("Bob")
+    ]
+
+    for entity in entities {
+        entity.Update()
+        io::Output(entity.GetName())
+    }
+    return 0
+}
+
+// ==== Level 6. C++ interop ====
+
+@include <iostream>
+@using namespace std
+@cpp {
+// Pure C++. Need C++ syntax, not Espresso
+bool is_prime(int n) {
+    if n < 2 {
+        return false
+    }
+    for int i = 2; i <= int(math::sqrt(n)); i+=1 {
+        if n % i == 0 {
+            return false;
+        }
+    }
+    return true;
+}
+}
+
+main: 
+    list<int> primes = []
+
+    for int num = 0, num < 50, num += 1 {
+        if is_prime(num) {
+            primes.append(num)
+        }
+    }
+
+    cout << $"Primes under 50: {primes.Join(", ")}" << endl
+
+---
+
+### **Goals for GPT-5**
+
+1. Implement **Lark grammar** for Espresso with all features above.
+2. Write **tokeniser, parser, semantic analyser** in Python.
+3. Build **ASTL.py** to emit C++14/17 code with `espresso_runtime.hpp`.
+4. Implement runtime composite types, generics, safe cast, and decorators.
+5. Make architecture modular for microcontroller targets & REPL.
+
+---
+
+Do you fully understand this spec, and can you implement the compiler pipeline in Python to produce working C++ code according to the workflow above?
+
 

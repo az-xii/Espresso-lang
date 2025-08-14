@@ -124,42 +124,36 @@ UnaryOperators: Set = {
 }
 
 
-# list[int] -> EspressoList<EspressoInt>
+# list[int] -> ListWrapper<>
 TYPE_MAP : dict = {
     # Espresso | C++
-    "byte": "EspressoByte", # 8-bit signed integer
-    "short" : "EspressoShort", # 16-bit signed integer
-    "int": "EspressoInt", # 32-bit signed integer
-    "long": "EspressoLong", # 64-bit signed integer
-    "dlong": "EspressoLongLong", # 128-bit signed integer
+    "byte": "ByteWrapper", # 8-bit signed integer
+    "short" : "ShortWrapper", # 16-bit signed integer
+    "int": "IntWrapper", # 32-bit signed integer
+    "long": "LongWrapper", # 64-bit signed integer
 
-    "ubyte": "EspressoByte", # 8-bit unsigned integer
-    "ushort" : "EspressoShort", # 16-bit unsigned integer
-    "uint": "EspressoUInt", # 32-bit unsigned integer
-    "ulong": "EspressoULong", # 64-bit unsigned integer
-    "ulonglong": "EspressoULongLong", # 128-bit unsigned integer
+    "ubyte": "UByteWrapper", # 8-bit unsigned integer
+    "ushort" : "UShortWrapper", # 16-bit unsigned integer
+    "uint": "UIntWrapper", # 32-bit unsigned integer
+    "ulong": "ULongWrapper", # 64-bit unsigned integer
 
-    "float8": "EspressoFloat8", # 8-bit floating point
-    "float16": "EspressoFloat16", # 16-bit floating point
-    "float": "EspressoFloat", # 32-bit floating point
-    "double": "EspressoDouble", # 64-bit floating point
-    "decimal": "EspressoDecimal", # 128-bit floating point
+    "FloatWrapper": "Fixed32", # 32-bit floating point
+    "DoubleWrapper": "Fixed64", # 64-bit floating point
 
-    "bin" : "EspressoBits", # 32-bit binary
-    "hex" : "EspressoBits", # 32-bit hexadecimal
-    "oct" : "EspressoBits", # 32-bit octal
+    "fx32" : "EspressoBits", # 32-bit binary
+    "f6x4" : "EspressoBits", # 32-bit hexadecimal
 
-    "string": "EspressoString", # String type
+    "string": "StringWrapper", # String type
     "bool": "bool", # Boolean type
     "void": "void", # Void type
-    "any": "EspressoAny", # Any type
-    "list": "EspressoList", # List type
-    "collection": "EspressoCollection", # Collection type
-    "map": "EspressoDict", # Dictionary type
-    "set": "EspressoSet", # Set type
-    "tuple": "EspressoTuple", # Tuple type
+    "any": "std::any", # Any type
+    "list": "ListWrapper", # List type
+    "collection": "CollectionWrapper", # Collection type
+    "map": "MapWrapper", # Dictionary type
+    "set": "SetWrapper", # Set type
+    "tuple": "TuppleWrapper", # Tuple type
     "auto": "auto", # Auto type
-    "union": "EspressoUnion" # Variant type
+    "union": "UnionWrapper" # Variant type
 }
 
 def ConvertType(espresso_type: str) -> str:
