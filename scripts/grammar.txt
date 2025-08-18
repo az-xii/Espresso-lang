@@ -39,14 +39,11 @@ int
 long
 ubyte
 ushort
-uint
 ulong
-ulonglong
 float
 double
 fixed16_16
 fixed32_32
-ufixed16_16
 char
 string
 bool

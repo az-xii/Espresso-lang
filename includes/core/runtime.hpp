@@ -23,15 +23,18 @@ class ByteWrapper;
 class ShortWrapper;
 class IntWrapper;
 class LongWrapper;
+
 class UByteWrapper;
 class UShortWrapper;
 class UIntWrapper;
 class ULongWrapper;
+
 class FloatWrapper;
 class DoubleWrapper;
 class Fixed16_16;
 class Fixed32_32;
 class UFixed16_16;
+class UFixed32_32;
 
 // ===== EXCEPTION HIERARCHY =====
 class Error : public std::exception {
@@ -246,6 +249,7 @@ class DoubleWrapper : public NumericWrapper<DoubleWrapper, double> { public: usi
 class Fixed16_16    : public NumericWrapper<Fixed16_16, int32_t> { public: using NumericWrapper::NumericWrapper; }; 
 class Fixed32_32    : public NumericWrapper<Fixed32_32, int64_t> { public: using NumericWrapper::NumericWrapper; };
 class UFixed16_16   : public NumericWrapper<UFixed16_16, u_int32_t> { public: using NumericWrapper::NumericWrapper; };
+class UFixed32_32   : public NumericWrapper<UFixed32_32, u_int64_t> { public: using NumericWrapper::NumericWrapper; };
 
 // ===== TEMPLATE IMPLEMENTATIONS =====
 // These need to be in the header since they're templates

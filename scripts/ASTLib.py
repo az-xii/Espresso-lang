@@ -124,36 +124,41 @@ UnaryOperators: Set = {
 }
 
 
-# list[int] -> ListWrapper<>
+# list<int> -> ListWrapper<IntWrapper>
 TYPE_MAP : dict = {
     # Espresso | C++
-    "byte": "ByteWrapper", # 8-bit signed integer
+    "byte"  : "ByteWrapper", # 8-bit signed integer
     "short" : "ShortWrapper", # 16-bit signed integer
-    "int": "IntWrapper", # 32-bit signed integer
-    "long": "LongWrapper", # 64-bit signed integer
+    "int"   : "IntWrapper", # 32-bit signed integer
+    "long"  : "LongWrapper", # 64-bit signed integer
 
-    "ubyte": "UByteWrapper", # 8-bit unsigned integer
-    "ushort" : "UShortWrapper", # 16-bit unsigned integer
-    "uint": "UIntWrapper", # 32-bit unsigned integer
-    "ulong": "ULongWrapper", # 64-bit unsigned integer
+    "ubyte" : "UByteWrapper", # 8-bit unsigned integer
+    "ushort": "UShortWrapper", # 16-bit unsigned integer
+    "uint"  : "UIntWrapper", # 32-bit unsigned integer
+    "ulong" : "ULongWrapper", # 64-bit unsigned integer
 
-    "FloatWrapper": "Fixed32", # 32-bit floating point
-    "DoubleWrapper": "Fixed64", # 64-bit floating point
+    "float"     : "FloatWrapper", # 32-bit floating point
+    "double"    : "DoubleWrapper", # 64-bit floating point
 
-    "fx32" : "EspressoBits", # 32-bit binary
-    "f6x4" : "EspressoBits", # 32-bit hexadecimal
+    "fixed16_16"    : "EspressoBits", # 32-bit fixed point
+    "fixed32_32"    : "EspressoBits", # 64-bit fixed point
 
-    "string": "StringWrapper", # String type
-    "bool": "bool", # Boolean type
-    "void": "void", # Void type
-    "any": "std::any", # Any type
-    "list": "ListWrapper", # List type
+    "ufixed16_16"   : "UFixed16_16",
+    "ufixed32_32"   : "UFixed32_32",
+
+    "char"      : "char",
+    "string"    : "StringWrapper", # String type
+    "bool"      : "bool", # Boolean type
+    "void"      : "void", # Void type
+    "any"       : "std::any", # Any type
+    "list"      : "ListWrapper", # List type
     "collection": "CollectionWrapper", # Collection type
-    "map": "MapWrapper", # Dictionary type
-    "set": "SetWrapper", # Set type
-    "tuple": "TuppleWrapper", # Tuple type
-    "auto": "auto", # Auto type
-    "union": "UnionWrapper" # Variant type
+    "map"       : "MapWrapper", # Dictionary type
+    "set"       : "SetWrapper", # Set type
+    "tuple"     : "TuppleWrapper", # Tuple type
+    "auto"      : "auto", # Auto type
+    "union"     : "UnionWrapper", # Variant type
+    "lambda"    : "LambdaWrapper" # Lambda type
 }
 
 def ConvertType(espresso_type: str) -> str:
