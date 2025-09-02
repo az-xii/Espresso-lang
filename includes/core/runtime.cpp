@@ -16,25 +16,31 @@ const std::type_info& Object::type() const noexcept {
 
 // Helper function for UTF-8 codepoint counting
 static size_t utf8_codepoint_count(const std::string& s) {
-    size_t i = 0, count = 0, n = s.size();
-    while (i < n) {
+    size_t count = 0;
+    for (size_t i = 0; i < s.size(); ) {
         unsigned char c = static_cast<unsigned char>(s[i]);
-        int width = 1;
-        if (c < 0x80) width = 1;
-        else if ((c & 0xE0) == 0xC0) width = 2;
-        else if ((c & 0xF0) == 0xE0) width = 3;
-        else if ((c & 0xF8) == 0xF0) width = 4;
-        else throw EncodingError("Invalid UTF-8 leading byte");
         
-        if (i + width > n) throw EncodingError("Truncated UTF-8 sequence");
-        
-        // Validate continuation bytes
-        for (int k = 1; k < width; ++k) {
-            unsigned char cc = static_cast<unsigned char>(s[i + k]);
-            if ((cc & 0xC0) != 0x80) throw EncodingError("Invalid UTF-8 continuation byte");
+        if (c < 0x80) {
+            i += 1;
+        } else if ((c & 0xE0) == 0xC0) {
+            if (i + 1 >= s.size() || (s[i+1] & 0xC0) != 0x80) {
+                throw EncodingError("Invalid UTF-8 sequence");
+            }
+            i += 2;
+        } else if ((c & 0xF0) == 0xE0) {
+            if (i + 2 >= s.size() || (s[i+1] & 0xC0) != 0x80 || (s[i+2] & 0xC0) != 0x80) {
+                throw EncodingError("Invalid UTF-8 sequence");
+            }
+            i += 3;
+        } else if ((c & 0xF8) == 0xF0) {
+            if (i + 3 >= s.size() || (s[i+1] & 0xC0) != 0x80 || 
+                (s[i+2] & 0xC0) != 0x80 || (s[i+3] & 0xC0) != 0x80) {
+                throw EncodingError("Invalid UTF-8 sequence");
+            }
+            i += 4;
+        } else {
+            throw EncodingError("Invalid UTF-8 leading byte");
         }
-        
-        i += width;
         count++;
     }
     return count;
@@ -175,70 +181,3 @@ bool StringWrapper::is_valid_utf8(const std::string& s) noexcept {
     return true;
 }
 
-// ===== TEST AND DEMONSTRATION FUNCTIONS =====
-void test_runtime_system() {
-    try {
-        std::cout << "=== Runtime System Test ===" << std::endl;
-        
-        // Test StringWrapper
-        StringWrapper str("Hello, 世界! 🌟");
-        std::cout << "String: " << str.str() << std::endl;
-        std::cout << "Byte length: " << str.length_bytes() << std::endl;
-        std::cout << "Codepoint length: " << str.length() << std::endl;
-        
-        // Test codepoint access
-        try {
-            for (size_t i = 0; i < str.length(); ++i) {
-                char32_t cp = str.at(i);
-                std::cout << "Codepoint " << i << ": U+" << std::hex << cp << std::dec << std::endl;
-            }
-        } catch (const StringIndexError& e) {
-            std::cout << "String index error: " << e.what() << std::endl;
-        }
-        
-        std::cout << "\n--- Numeric Tests ---" << std::endl;
-        
-        // Test NumericWrapper
-        IntWrapper a(42);
-        IntWrapper b(8);
-        IntWrapper c = a + b;
-        std::cout << "42 + 8 = " << c << std::endl;
-        
-        // Test bitwise operations (only works with integral types)
-        IntWrapper x(12);  // 1100 in binary
-        IntWrapper y(10);  // 1010 in binary
-        IntWrapper z = x & y;  // Should be 8 (1000 in binary)
-        std::cout << "12 & 10 = " << z << std::endl;
-        
-        // Test division by zero
-        IntWrapper zero(0);
-        try {
-            IntWrapper result = a / zero;
-        } catch (const DivisionByZeroError& e) {
-            std::cout << "Caught expected error: " << e.what() << std::endl;
-        }
-        
-        // Test overflow detection
-        try {
-            ByteWrapper small_num(100);
-            ByteWrapper big_result = small_num * ByteWrapper(3);  // Should be fine (300 might overflow int8_t)
-            std::cout << "100 * 3 = " << big_result << std::endl;
-        } catch (const OverflowError& e) {
-            std::cout << "Overflow caught: " << e.what() << std::endl;
-        }
-        
-        // Test floating point operations
-        FloatWrapper f1(3.14f);
-        FloatWrapper f2(2.0f);
-        FloatWrapper f3 = f1 * f2;
-        std::cout << "3.14 * 2.0 = " << f3 << std::endl;
-        
-        // Note: Bitwise operations are not available for FloatWrapper
-        // FloatWrapper f4 = f1 & f2;  // This would cause a compile error!
-        
-    } catch (const Error& e) {
-        std::cout << "Error: " << e.what() << std::endl;
-    } catch (const std::exception& e) {
-        std::cout << "Standard exception: " << e.what() << std::endl;
-    }
-}

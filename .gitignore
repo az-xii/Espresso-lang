@@ -1,4 +1,37 @@
-/venv
-/.vscode
-/pycache
-/Test
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+.venv/
+venv/
+.env
+.env.*
+
+# --- C++ ---
+# Build directories
+/build/
+/bin/
+/lib/
+/out/
+
+# Compiled object files, libraries, executables
+*.o
+*.obj
+*.so
+*.dll
+*.dylib
+*.exe
+*.out
+*.a
+*.lib
+
+# --- General ---
+.DS_Store
+Thumbs.db
+
+# Log files
+*.log
+*.tmp

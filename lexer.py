@@ -1,12 +1,28 @@
 #! venv/bin/python3
+"""
+az_lexer.py
+
+A tokenizer for the "AZ" language using Lark.
+
+Save and run:
+    pip install lark-parser
+    python az_lexer.py path/to/source.az
+
+If no file is given the embedded sample is used.
+
+Produces a token stream (type, value, line, column). By default prints a friendly table;
+use --json to emit a JSON list.
+"""
+
 from __future__ import annotations
 import re
-import json
 import sys
+import json
 import argparse
-from typing import Tuple, Dict, Iterable, List
+from typing import Tuple, Dict, Iterable
 from lark import Lark, Token, UnexpectedInput
 
+# -------------------- Sample --------------------
 SAMPLE = r"""
 // ==== Level 6. C++ interop ====
 
@@ -40,9 +56,16 @@ main:
 
     return 0
 """
+
 # -------------------- Preprocessor for balanced @cpp { ... } blocks --------------------
 def extract_cpp_blocks(source: str, marker: str = "@cpp") -> Tuple[str, Dict[str, str]]:
-    """Replace each @cpp { ... } balanced block with a placeholder: __CPP_BLOCK_n__"""
+    """
+    Replace each @cpp { ... } balanced block with a placeholder: __CPP_BLOCK_n__
+    and return (transformed_source, mapping_of_placeholders_to_blocks).
+
+    Attempts to correctly handle nested braces and ignores braces found
+    inside strings or comments inside the block.
+    """
     out_parts = []
     i = 0
     n = len(source)
@@ -55,17 +78,20 @@ def extract_cpp_blocks(source: str, marker: str = "@cpp") -> Tuple[str, Dict[str
             out_parts.append(source[i:])
             break
         start = i + m.start()
-        out_parts.append(source[i:start])
+        out_parts.append(source[i:start])     # text before marker
         j = start + len(m.group(0))
 
+        # skip whitespace
         while j < n and source[j].isspace():
             j += 1
 
+        # if there is no opening brace, treat as plain token
         if j >= n or source[j] != '{':
             out_parts.append(source[start:start+len(m.group(0))])
             i = start + len(m.group(0))
             continue
 
+        # find balanced closing brace
         k = j
         depth = 0
         in_string = False
@@ -78,6 +104,7 @@ def extract_cpp_blocks(source: str, marker: str = "@cpp") -> Tuple[str, Dict[str
         while k < n:
             ch = source[k]
             nxt = source[k+1] if k+1 < n else ''
+
             if in_line_comment:
                 if ch == '\n':
                     in_line_comment = False
@@ -127,7 +154,7 @@ def extract_cpp_blocks(source: str, marker: str = "@cpp") -> Tuple[str, Dict[str
 
         block = source[start:k]
         brace_pos = block.find('{')
-        block_only = block[brace_pos:]  # include { ... }
+        block_only = block[brace_pos:]  # remove "@cpp" marker
         placeholder = f"__CPP_BLOCK_{placeholder_index}__"
         mapping[placeholder] = block_only
         out_parts.append(placeholder)
@@ -137,8 +164,7 @@ def extract_cpp_blocks(source: str, marker: str = "@cpp") -> Tuple[str, Dict[str
     merged = ''.join(out_parts)
     return merged, mapping
 
-
-# -------------------- Grammar --------------------
+# -------------------- Lark grammar --------------------
 GRAMMAR = r"""
 start: (CPP_BLOCK | LITERAL | COMMENTS | DECOR | TYPE | KEYW | OP | ID | DELIM | MISC)*
 
@@ -160,7 +186,7 @@ LITERAL: LINE_COMMENT
 COMMENTS: LINE_COMMENT | C_BLOCK_COMMENT
 
 LINE_COMMENT: /\/\/[^\n]*/
-C_BLOCK_COMMENT: /\/\*([^\*]|\*(?!\/))*\*\//
+C_BLOCK_COMMENT: /\/\*([^*]|\*(?!\/))*\*\//
 RAW_STRING: /R"([^"\\]|\\.)*"/
 INTERP_STRING: /\$"(?:[^"\\]|\\.|"(?!\s)|\{[^}]*\})*"/
 STRING: /"([^"\\]|\\.)*"/
@@ -192,7 +218,7 @@ KEYW: "func" | "class" | "this" | "super" | "private" | "public" | "protected"
 OP: OP_MULTI | OP_SINGLE
 OP_MULTI: "::" | "->" | "=>" | "++" | "--" | "+=" | "-=" | "*=" | "/="
         | "==" | "!=" | "<=" | ">=" | "||" | "&&" | "<<" | ">>"
-OP_SINGLE: /[+\-*\/%=<>!&|^~]/
+OP_SINGLE: /[+\-*\/\%=<>!&|^~]/
 
 ID: /[A-Za-z_][A-Za-z0-9_]*/
 
@@ -207,46 +233,30 @@ DOT: "."
 %ignore WS
 """
 
+# -------------------- Tokenization helper --------------------
 def build_parser() -> Lark:
     return Lark(GRAMMAR, start='start', parser='lalr', lexer='contextual', propagate_positions=True)
 
+def lex_source(source: str, include_comments: bool = True):
+    preprocessed, cpp_map = extract_cpp_blocks(source)
+    parser = build_parser()
+    try:
+        stream = parser.lex(preprocessed)
+    except UnexpectedInput as e:
+        raise RuntimeError(f"Lexing failed: {e!s}")
 
-# -------------------- Lexer class --------------------
-class Lexer:
-    @staticmethod
-    def lex_source(source: str, include_comments: bool = True) -> Tuple[List[Tuple[str,int,int,str]], List[str]]:
-        """
-        :param source: AZ source code
-        :param include_comments: whether to include comments in token stream
-        :return: (tokens, cpp_blocks)
-                 where tokens = [(type, line, column, value)] and value for CPP_BLOCK is an integer index
-                       cpp_blocks = list of raw C++ block strings
-        """
-        preprocessed, cpp_map = extract_cpp_blocks(source)
-        parser = build_parser()
-        try:
-            stream = parser.lex(preprocessed)
-        except UnexpectedInput as e:
-            raise RuntimeError(f"Lexing failed: {e!s}")
-
-        tokens: List[Tuple[str,int,int,str]] = []
-        cpp_blocks: List[str] = []
-
-        for tok in stream:
-            val = tok.value
-
-            if tok.type == 'CPP_BLOCK':
-                # store only index
-                idx = len(cpp_blocks)
-                cpp_blocks.append(cpp_map[val])
-                val = str(idx)
-
-            if not include_comments and tok.type in ('LINE_COMMENT', 'C_BLOCK_COMMENT'):
-                continue
-
-            tokens.append((tok.type, tok.line, tok.column, val))
-
-        return tokens, cpp_blocks
+    for tok in stream:
+        val = tok.value
+        if tok.type == 'CPP_BLOCK' and tok.value in cpp_map:
+            val = cpp_map[tok.value]
+        if not include_comments and tok.type in ('LINE_COMMENT', 'C_BLOCK_COMMENT'):
+            continue
+        yield {
+            "type": tok.type,
+            "value": val,
+            "line": getattr(tok, "line", None),
+            "column": getattr(tok, "column", None),
+        }
 
 # -------------------- CLI --------------------
 def main(argv: Iterable[str] = None):
@@ -263,23 +273,21 @@ def main(argv: Iterable[str] = None):
         text = SAMPLE
 
     try:
-        tokens, blocks = Lexer.lex_source(text, include_comments=not args.no_comments)
+        tokens = list(lex_source(text, include_comments=not args.no_comments))
     except RuntimeError as e:
         print("Error during lexing:", e, file=sys.stderr)
         sys.exit(2)
 
     if args.json:
-        print(json.dumps((tokens, blocks), indent=2, ensure_ascii=False))
+        print(json.dumps(tokens, indent=2, ensure_ascii=False))
         return
-    
-    print("Tokens:")
+
     for t in tokens:
-        print(t)
-
-    print("\nC++ Blocks:")
-    for i, b in enumerate(blocks):
-        print(f"[{i}] {b}")
-
+        v = t["value"]
+        vs = v.replace("\n", "\\n")
+        if len(vs) > args.max:
+            vs = vs[:args.max-3] + "..."
+        print(f"{t['type']:15} (line {t['line']:>3}, col {t['column']:>2})  {vs}")
 
 if __name__ == "__main__":
     main()

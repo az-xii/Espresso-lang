@@ -1,6 +1,11 @@
 from abc import ABC
 from enum import Enum
+from pydoc import text
+import re
+from token import COMMENT
 from typing import List, Optional, Union, Tuple, Any, Literal, Dict, Set
+
+from numpy import generic
 
 # ==============================================
 # Global Types
@@ -14,6 +19,8 @@ class NodeType(Enum):
     INDENT = "INDENT"
     IDENTIFIER = "IDENTIFIER"
     BODY = "BODY"
+    COMMENT = "COMMENT"
+    CPP_BLOCK = "CPP_BLOCK"
 
     ANNOTATION_DEFINE = "ANNOTATION_DEFINE"
     ANNOTATION_ASSERT = "ANNOTATION_ASSERT"
@@ -297,6 +304,14 @@ class NewLine(_ASTNode):
     def To_CXX(self) -> str:
         return "\n"
 
+class Comment(_ASTNode):
+    """Represents a comment in the source code."""
+    def __init__(self, text: str):
+        super().__init__(NodeType.COMMENT, value=text)
+
+    def To_CXX(self) -> str:
+        text = self.value.strip()
+        return f"// {text}" if not '\n' in text else f"/* {text} */"
 
 # ==============================================
 # Meta Modifier Classes
@@ -767,10 +782,15 @@ class FuncCallParam(_ASTNode):
 class FunctionCall(_Value, _ASTNode):
     def __init__(self, 
                  target: Identifier,
-                 params: List[FuncCallParam]):
+                 params: List[FuncCallParam],
+                 generic_params: List["GenericParam"] = []):
         super().__init__(NodeType.FUNCTION_CALL)
         self.target = target if isinstance(target, _ASTNode) else Identifier(target)
         self.params = params
+        self.generic_params = generic_params or []
+
+    def _template(self):
+        return f"<{', '.join(p.To_CXX() for p in self.generic_params)}>\n" if self.generic_params else ""
 
     def To_CXX(self) -> str:
         # All function calls use the parameter struct
@@ -781,7 +801,7 @@ class FunctionCall(_Value, _ASTNode):
             else:
                 args.append(f"{param.value.To_CXX()}")
         
-        return f"{self.target.To_CXX()}({', '.join(args)})"
+        return f"{self.target.To_CXX()}{self._template()}({', '.join(args)})"
 
 class FunctionDecl(_ASTNode):
     def __init__(self, 
