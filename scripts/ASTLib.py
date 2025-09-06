@@ -3,9 +3,11 @@ from enum import Enum
 from pydoc import text
 import re
 from token import COMMENT
-from typing import List, Optional, Union, Tuple, Any, Literal, Dict, Set
+from typing import List, Optional, Union, Tuple, Any, Dict, Set
+from typing import Literal as tLiteral
 
-from numpy import generic
+
+from numpy import generic, var
 
 # ==============================================
 # Global Types
@@ -31,16 +33,16 @@ class NodeType(Enum):
     ANNOTATION_NAMESPACE = "ANNOTATION_NAMESPACE"
 
 
-    PRIVATE_MODIFIER = "PRIVATE_MODIFIER"
-    PUBLIC_MODIFIER = "PUBLIC_MODIFIER"
-    PROTECTED_MODIFIER = "PROTECTED_MODIFIER"
-    CONST_MODIFIER = "CONST_MODIFIER"
-    CONSTEXPR_MODIFIER = "CONSTEXPR_MODIFIER"
-    CONSTEVAL_MODIFIER = "CONSTEVAL_MODIFIER"
-    STATIC_MODIFIER = "STATIC_MODIFIER"
-    ABSTRACT_MODIFIER = "ABSTRACT_MODIFIER"
-    OVERRIDE_MODIFIER = "OVERRIDE_MODIFIER"
-    VIRTUAL_MODIFIER = "VIRTUAL_MODIFIER"
+    PRIVATEModifier = "PRIVATEModifier"
+    PUBLICModifier = "PUBLICModifier"
+    PROTECTEDModifier = "PROTECTEDModifier"
+    CONSTModifier = "CONSTModifier"
+    CONSTEXPRModifier = "CONSTEXPRModifier"
+    CONSTEVALModifier = "CONSTEVALModifier"
+    STATICModifier = "STATICModifier"
+    ABSTRACTModifier = "ABSTRACTModifier"
+    OVERRIDEModifier = "OVERRIDEModifier"
+    VIRTUALModifier = "VIRTUALModifier"
 
     VAR_DECLARE = "VAR_DECLARE"
     VAR_ASSIGN = "VAR_ASSIGN"
@@ -52,15 +54,15 @@ class NodeType(Enum):
     EXPRESSION_BINARY = "EXPRESSION_BINARY"
     EXPRESSION_UNARY = "EXPRESSION_UNARY"
 
-    NUMERIC_LITERAL = "NUMERIC_LITERAL"
-    LIST_LITERAL = "LIST_LITERAL"
-    MAP_LITERAL = "MAP_LITERAL"
-    STRING_LITERAL = "STRING_LITERAL"
-    RAW_STRING_LITERAL = "RAW_STRING_LITERAL"
-    F_STRING_LITERAL = "F_STRING_LITERAL"
-    BOOL_LITERAL = "BOOL_LITERAL"
-    VOID_LITERAL = "VOID_LITERAL"
-    NULLPTR_LITERAL = "NULLPTR_LITERAL"
+    NUMERICLiteral = "NUMERICLiteral"
+    LISTLiteral = "LISTLiteral"
+    MAPLiteral = "MAPLiteral"
+    STRINGLiteral = "STRINGLiteral"
+    RAW_STRINGLiteral = "RAW_STRINGLiteral"
+    F_STRINGLiteral = "F_STRINGLiteral"
+    BOOLLiteral = "BOOLLiteral"
+    VOIDLiteral = "VOIDLiteral"
+    NULLPTRLiteral = "NULLPTRLiteral"
 
     FUNC_PARAM = "FUNC_PARAM"
     FUNC_CALL_PARAM = "FUNC_CALL_PARAM"
@@ -68,7 +70,7 @@ class NodeType(Enum):
     FUNCTION_CALL = "FUNCTION_CALL"
     LAMBDA_EXPR = "LAMBDA_EXPR"
     RETURN = "RETURN"
-    NULLPTR_LITERAL
+    NULLPTRLiteral
     GENERIC_PARAM = "GENERIC_PARAM"
     CLASS_DEFINE = "CLASS_DEFINE"
     CLASS_INSTANTIATION = "CLASS_INSTANTIATION"
@@ -129,7 +131,6 @@ UnaryOperators: Set = {
     "+",     # Unary Plus
     "~"      # Bitwise NOT
 }
-
 
 # list<int> -> ListWrapper<IntWrapper>
 TYPE_MAP : dict = {
@@ -211,23 +212,23 @@ def ConvertType(espresso_type: str) -> str:
 # ==============================================
 
 # Base AST Node
-class _ASTNode(ABC):
+class ASTNode(ABC):
     """Base class for all AST nodes.
     Attributes:
         node_type (NodeType): The type of the AST node.
         value (Optional[Any]): The value associated with the node, if any.
         body (Optional["Body"]): The body of the node, if applicable.
-        modifiers (Optional[List[_Modifier]]): List of modifiers associated with the node.
+        modifiers (Optional[List[Modifier]]): List of modifiers associated with the node.
     """
     def __init__(self, node_type: NodeType,
                 value: Optional[Any] = None,
                 body: Optional["Body"] = None,
-                modifiers: Optional[List["_Modifier"]] = None):
+                modifiers: Optional[List["Modifier"]] = None):
     
         self.node_type: NodeType = node_type
         self.value: Optional[Any] = value
         self.body: Optional["Body"] = body
-        self.modifiers: Optional[List["_Modifier"]] = modifiers if modifiers is not None else []
+        self.modifiers: Optional[List["Modifier"]] = modifiers if modifiers is not None else []
 
     def __hash__(self):
         return hash((self.node_type, self.value, tuple(self.modifiers), self.body))
@@ -240,43 +241,43 @@ class _ASTNode(ABC):
         raise NotImplementedError("To_CXX method must be implemented in subclasses")
 
 # Base class for all value-producing expressions (literals, variables, operations, etc.)
-class _Value(_ASTNode, ABC):
+class Value(ASTNode, ABC):
     """Base class for all value-producing expressions (literals, variables, operations, etc.)"""
     pass
 
 # Base class for all annotations (@namespace, @define, etc.)
-class Annotation(_ASTNode):
+class Annotation(ASTNode):
     """Base class for annotations"""
     pass
 
 # Base class for all modifiers (private, static, etc.)
-class _Modifier(_ASTNode):
+class Modifier(ASTNode):
     """Base class for all `@` modifiers"""
     pass
 
 # Base class for all condition types (comparisons, boolean operations, etc.)
-class _Condition(_Value, _ASTNode):
+class Condition(Value, ASTNode):
     """Base class for all condition types"""
     pass
 
 # Base class for all expression types (binary, unary, etc.)
-class _Expression(_Value, _ASTNode):
+class Expression(Value, ASTNode):
     """Base class for all expression types"""
     pass
 
 # Base class for all literal types (numeric, string, etc.)
-class _Literal(_Value, _ASTNode):
+class Literal(Value, ASTNode):
     """Base class for all literal types (numeric, string, etc.)"""
     pass
 
 
 # Blocks
 class Body():
-    def __init__(self, statements: List[_ASTNode], indent_level: int = 1):
+    def __init__(self, statements: List[ASTNode], indent_level: int = 1):
         self.indent_level = indent_level
         self.children = statements if isinstance(statements, List) else statements.children if isinstance(statements, Body) else [] 
 
-    def add_statement(self, statement: _ASTNode) -> None:
+    def add_statement(self, statement: ASTNode) -> None:
         """Add a statement to the body."""
         self.children.append(statement)
 
@@ -287,7 +288,7 @@ class Body():
             if hasattr(stmt, 'To_CXX'):
                 content = stmt.To_CXX()
                 # Add semicolon for expression statements
-                if isinstance(stmt, (_Value, FunctionCall)) and not content.endswith(';'):
+                if isinstance(stmt, (Value, FunctionCall)) and not content.endswith(';'):
                     content += ';'
             else:
                 content = str(stmt)
@@ -295,8 +296,22 @@ class Body():
             lines.extend(f"{indent}{line}" for line in stmt_lines)
         return '\n'.join(lines)
 
+class Program():
+    def __init__(self, body: Body):
+        self.body = body if isinstance(body, Body) else Body([])
+        self.includes: Set[str] = set("#include <runtime.hpp>")
+
+    def add_include(self, include: str) -> None:
+        """Add an include directive to the program."""
+        self.includes.add(include)
+
+    def To_CXX(self) -> str:
+        includes_str = '\n'.join(sorted(self.includes))
+        body_str = self.body.To_CXX()
+        return f"{includes_str}\n\n{body_str}"
+
 # Newline Node
-class NewLine(_ASTNode):
+class NewLine(ASTNode):
     """Represents a newline in the source code."""
     def __init__(self):
         super().__init__(NodeType.NEWLINE, value="\n")
@@ -304,7 +319,7 @@ class NewLine(_ASTNode):
     def To_CXX(self) -> str:
         return "\n"
 
-class Comment(_ASTNode):
+class Comment(ASTNode):
     """Represents a comment in the source code."""
     def __init__(self, text: str):
         super().__init__(NodeType.COMMENT, value=text)
@@ -318,55 +333,55 @@ class Comment(_ASTNode):
 # ==============================================
 
 
-class IsPrivateModifier(_Modifier):
+class IsPrivateModifier(Modifier):
     """Private Modifier"""
     def __init__(self):
-        super().__init__(NodeType.PRIVATE_MODIFIER)
+        super().__init__(NodeType.PRIVATEModifier)
 
-class IsPublicModifier(_Modifier):
+class IsPublicModifier(Modifier):
     """Private Modifier"""
     def __init__(self):
-        super().__init__(NodeType.PUBLIC_MODIFIER)
+        super().__init__(NodeType.PUBLICModifier)
 
-class IsProtectedModifier(_Modifier):
+class IsProtectedModifier(Modifier):
     """Private Modifier"""
     def __init__(self):
-        super().__init__(NodeType.PROTECTED_MODIFIER)
+        super().__init__(NodeType.PROTECTEDModifier)
 
-class IsConstModifier(_Modifier):
+class IsConstModifier(Modifier):
     """Const/immutable modifier"""
     def __init__(self):
-        super().__init__(NodeType.CONST_MODIFIER)
+        super().__init__(NodeType.CONSTModifier)
 
-class IsConstexprModifier(_Modifier):
+class IsConstexprModifier(Modifier):
     """Const/immutable modifier"""
     def __init__(self):
-        super().__init__(NodeType.CONSTEXPR_MODIFIER)
+        super().__init__(NodeType.CONSTEXPRModifier)
 
-class IsConstevalModifier(_Modifier):
+class IsConstevalModifier(Modifier):
     """Const/immutable modifier"""
     def __init__(self):
-        super().__init__(NodeType.CONSTEVAL_MODIFIER)
+        super().__init__(NodeType.CONSTEVALModifier)
 
-class IsStaticModifier(_Modifier):
+class IsStaticModifier(Modifier):
     """Static/class-level modifier"""
     def __init__(self):
-        super().__init__(NodeType.STATIC_MODIFIER)
+        super().__init__(NodeType.STATICModifier)
 
-class IsAbstractModifier(_Modifier):
+class IsAbstractModifier(Modifier):
     """Abstract class/method modifier"""
     def __init__(self):
-        super().__init__(NodeType.ABSTRACT_MODIFIER)
+        super().__init__(NodeType.ABSTRACTModifier)
 
-class IsOverrideModifier(_Modifier):
+class IsOverrideModifier(Modifier):
     """Override class/method modifier"""
     def __init__(self):
-        super().__init__(NodeType.OVERRIDE_MODIFIER)
+        super().__init__(NodeType.OVERRIDEModifier)
 
-class IsVirtualModifier(_Modifier):
+class IsVirtualModifier(Modifier):
     """Virtual class/method modifier"""
     def __init__(self):
-        super().__init__(NodeType.VIRTUAL_MODIFIER)
+        super().__init__(NodeType.VIRTUALModifier)
 
 
 MOD_MAP: Dict = {
@@ -380,13 +395,11 @@ MOD_MAP: Dict = {
     IsVirtualModifier: "virtual"
 }
 
-def ConvertModifier(modifier: _Modifier) -> str:
+def ConvertModifier(modifier: Modifier) -> str:
     """Convert a modifier to its C++ string representation."""
     if type(modifier) in MOD_MAP:
         return MOD_MAP[type(modifier)]
     raise ValueError(f"Unknown modifier type: {type(modifier)}")
-
-
 
 
 class AnnotationDefine(Annotation):
@@ -394,7 +407,7 @@ class AnnotationDefine(Annotation):
     def __init__(
             self, 
             name: Union[str, "Identifier"],
-            value: "_Literal"):
+            value: "Literal"):
         super().__init__(NodeType.ANNOTATION_DEFINE, value=value)
         self.value = value
         self.name = name if isinstance(name, Identifier) else Identifier(name)
@@ -404,7 +417,7 @@ class AnnotationDefine(Annotation):
 
 class AnnotationAssert(Annotation):
     """Represents an ASSERT annotation that generates runtime checks."""
-    def __init__(self, condition: "_Value"):
+    def __init__(self, condition: "Value"):
         super().__init__(NodeType.ANNOTATION_ASSERT)
         self.condition = condition
         # Handle different message types
@@ -440,7 +453,7 @@ class AnnotationUnsafe(Annotation):
 
 class AnnotationPanic(Annotation):
     """Intentional Crash"""
-    def __init__(self, value: "_Literal"):
+    def __init__(self, value: "Literal"):
         super().__init__(NodeType.ANNOTATION_PANIC, value=value)
 
     def To_CXX(self):
@@ -448,7 +461,7 @@ class AnnotationPanic(Annotation):
     
 class AnnotationNamespace(Annotation):
     """Nampespace"""
-    def __init__(self, ns_name: Union[str, "Identifier"], children: Union[List["_ASTNode"], "Body"]):
+    def __init__(self, ns_name: Union[str, "Identifier"], children: Union[List["ASTNode"], "Body"]):
         super().__init__(NodeType.ANNOTATION_NAMESPACE, value=ns_name if isinstance(ns_name, Identifier) else Identifier(ns_name))
         self.body = children if isinstance(children, Body) else Body(children or [], 1)
 
@@ -463,7 +476,7 @@ class AnnotationNamespace(Annotation):
 # ==============================================
 
 # Variable name
-class Identifier(_Value, _ASTNode):
+class Identifier(Value, ASTNode):
     """Represents an identifier in the source code."""
     def __init__(self, value: str):
         super().__init__(NodeType.IDENTIFIER, value=value)
@@ -472,9 +485,9 @@ class Identifier(_Value, _ASTNode):
         return str(self.value).strip()
 
 # Condition Nodes (==, <=, >=, !=, >, <)
-class Comparison(_Condition):
+class Comparison(Condition):
     """Represents comparison operations (==, <=, >=, etc.)"""
-    def __init__(self, left: _ASTNode, op: str, right: _ASTNode):
+    def __init__(self, left: ASTNode, op: str, right: ASTNode):
         if op not in ConditionOperators:
             raise ValueError(f"Invalid comparison operator: {op}")
         super().__init__(NodeType.COMPARISON)
@@ -486,9 +499,9 @@ class Comparison(_Condition):
         return f"{self.left.To_CXX()} {self.op} {self.right.To_CXX()}".strip()
 
 # Boolean Condition Nodes (and, or, not)
-class BooleanCondition(_Condition):
+class BooleanCondition(Condition):
     """Represents boolean operations (and, or, not)"""
-    def __init__(self, op: str, operands: List[_ASTNode]):
+    def __init__(self, op: str, operands: List[ASTNode]):
         super().__init__(NodeType.CONDITION)
         self.op = op.lower()  # 'and', 'or', 'not'
         self.operands = operands
@@ -503,9 +516,9 @@ class BooleanCondition(_Condition):
         return f" {cxx_op} ".join(op.To_CXX() for op in self.operands).strip()
 
 # Binary Expression Nodes (arithmetic, bitwise)
-class BinaryExpression(_Expression):
+class BinaryExpression(Expression):
     """Represents binary operations (+, -, *, /, %, &, |, ^, <<, >>)"""
-    def __init__(self, left: _ASTNode, op: str, right: _ASTNode):
+    def __init__(self, left: ASTNode, op: str, right: ASTNode):
         if op not in BinaryOperators:
             raise ValueError(f"Invalid binary operator: {op}")
         super().__init__(NodeType.EXPRESSION_BINARY)
@@ -517,9 +530,9 @@ class BinaryExpression(_Expression):
         return f"{self.left.To_CXX()} {self.op} {self.right.To_CXX()}".strip()
 
 # Unary Expression Nodes (unary operations like !, -, +, ~)
-class UnaryExpression(_Expression):
+class UnaryExpression(Expression):
     """Represents unary operations (!, -, +, ~)"""
-    def __init__(self, op: str, operand: _ASTNode):
+    def __init__(self, op: str, operand: ASTNode):
         super().__init__(NodeType.EXPRESSION_UNARY)
         self.op = op
         self.operand = operand
@@ -529,11 +542,11 @@ class UnaryExpression(_Expression):
         op = '!' if self.op == 'not' else self.op
         return f"{op}{self.operand.To_CXX()}".strip()
 
-class VarDeclare(_ASTNode):
+class VarDeclare(ASTNode):
     def __init__(self, 
                  var_name: Identifier,
                  var_type: Identifier,
-                 modifiers: List[_Modifier] = []):
+                 modifiers: List[Modifier] = []):
         super().__init__(NodeType.VAR_DECLARE, modifiers=modifiers)
         self.var_name = var_name
         self.var_type = var_type
@@ -546,12 +559,12 @@ class VarDeclare(_ASTNode):
         parts.append(self.var_name.To_CXX())
         return ' '.join(parts) + ';'
 
-class VarAssign(_ASTNode):
+class VarAssign(ASTNode):
     def __init__(self, 
                  var_name: Identifier,
-                 value: _Value,
+                 value: Value,
                  var_type: Identifier,
-                 modifiers: List[_Modifier] = []):
+                 modifiers: List[Modifier] = []):
         super().__init__(NodeType.VAR_ASSIGN, modifiers=modifiers)
         self.var_name = var_name
         self.value = value
@@ -566,11 +579,11 @@ class VarAssign(_ASTNode):
         parts.append(f"= {self.value.To_CXX()}")
         return ' '.join(parts) + ';'
 
-class MultiVarDeclare(_ASTNode):
+class MultiVarDeclare(ASTNode):
     def __init__(self,
                 var_names: List[Identifier], 
                 var_type: Identifier, 
-                modifiers: List[_Modifier] = []):
+                modifiers: List[Modifier] = []):
         super().__init__(NodeType.MULTI_VAR_DECLARE, modifiers=modifiers)
         self.var_names = var_names
         self.var_type = var_type
@@ -583,12 +596,12 @@ class MultiVarDeclare(_ASTNode):
         parts.append(', '.join(var.To_CXX() for var in self.var_names))
         return ' '.join(parts) + ';'
 
-class MultiVarAssign(_ASTNode):
+class MultiVarAssign(ASTNode):
     def __init__(self,
                 var_names: List[Identifier],
-                value: _Value,
+                value: Value,
                 var_type: Identifier, 
-                modifiers: List[_Modifier] = []):
+                modifiers: List[Modifier] = []):
         super().__init__(NodeType.MULTI_VAR_ASSIGN, modifiers=modifiers)
         self.var_names = var_names
         self.var_type = var_type
@@ -608,22 +621,22 @@ class MultiVarAssign(_ASTNode):
 # ==============================================
 
 # `1, 0.6, 0xDEADBEEF`
-class NumericLiteral(_Literal):
+class NumericLiteral(Literal):
     """Minimal numeric literal that passes through with C++ suffixes"""
     def __init__(self, value: str):
-        super().__init__(NodeType.NUMERIC_LITERAL)
-        self.raw_value = value.strip()
+        super().__init__(NodeType.NUMERICLiteral)
+        self.rawValue = value.strip()
 
     def To_CXX(self) -> str:
         """Pass through with underscores removed"""
-        return self.raw_value.replace('_', '')
+        return self.rawValue.replace('_', '')
 
 # `{1, 0.6, 0xDEADBEEF}`
-class ItemContainerLiteral(_Literal):
+class ItemContainerLiteral(Literal):
     """Base class for list/set/tuple literals using uniform {} syntax"""
-    def __init__(self, items: List[_ASTNode], delims : str = "{}"):
+    def __init__(self, items: List[ASTNode], delims : str = "{}"):
         assert delims in ["()", "{}"], f"Unknown demlimiter {delims}"
-        super().__init__(NodeType.LIST_LITERAL)  # We'll reuse this node type
+        super().__init__(NodeType.LISTLiteral)  # We'll reuse this node type
         self.items = items
         self.delims = delims
 
@@ -632,10 +645,10 @@ class ItemContainerLiteral(_Literal):
         return f"{self.delims[0]}{items_str}{self.delims[1]}"
 
 # `{{"Renz", 1}, {"Henry Lee Hu", 2}}`
-class KVContainerLiteral(_Literal):
+class KVContainerLiteral(Literal):
     """Base class for map literals using {{key, value}} syntax"""
-    def __init__(self, pairs: List[Tuple[_ASTNode, _ASTNode]]):
-        super().__init__(NodeType.MAP_LITERAL)  # We'll reuse this node type
+    def __init__(self, pairs: List[Tuple[ASTNode, ASTNode]]):
+        super().__init__(NodeType.MAPLiteral)  # We'll reuse this node type
         self.pairs = pairs
 
     def To_CXX(self) -> str:
@@ -646,10 +659,10 @@ class KVContainerLiteral(_Literal):
         return f"{{{pairs_str}}}"
 
 # `"Hello, World!"`
-class NormalStringLiteral(_Literal):
+class NormalStringLiteral(Literal):
     """Regular string literal with escape sequences"""
     def __init__(self, value: str):
-        super().__init__(NodeType.STRING_LITERAL, value)
+        super().__init__(NodeType.STRINGLiteral, value)
 
     def To_CXX(self) -> str:
         # Remove the repr() and just escape the string
@@ -661,85 +674,110 @@ class NormalStringLiteral(_Literal):
         return f'"{escaped}"'  # Keep as C++ string literal
 
 # `r"Hello\nWorld"`
-class RawStringLiteral(_Literal):
+class RawStringLiteral(Literal):
     """Raw string literal (no escape processing)"""
     def __init__(self, value: str):
-        super().__init__(NodeType.RAW_STRING_LITERAL, value)
+        super().__init__(NodeType.RAW_STRINGLiteral, value)
 
     def To_CXX(self) -> str:
         return f'R"({self.value})"'
 
-# `f"Hello, ${name}"`
-class InterpolatedStringLiteral(_Literal):
-    """f-string style literal with f"text ${expr} more text" syntax"""
+# `$"Hello, {name}"`
+class InterpolatedStringLiteral(Literal):
+    """f-string style literal with $"text {expr} more text" syntax"""
     def __init__(self, template: str):
-        super().__init__(NodeType.F_STRING_LITERAL, value=template)
+        super().__init__(NodeType.F_STRINGLiteral, value=template)
         self.parts = self._parse_template(template)
 
-    def _parse_template(self, template: str) -> List[Union[str, _ASTNode]]:
-        parts = []
-        current = ""
+    def _parse_template(self, template: str) -> List[Union[str, ASTNode]]:
+        # Accept forms like $"...". Extract inner content between the outermost quotes.
+        m = re.match(r'^\$([\'"])(.*)\1$', template, re.S)
+        inner = m.group(2) if m else template
+
+        parts: List[Union[str, ASTNode]] = []
+        cur = []
         i = 0
-        while i < len(template):
-            if template[i] == '$' and i + 1 < len(template) and template[i + 1] == '{':
-                if current:
-                    parts.append(current)
-                    current = ""
-                # Find matching }
-                start = i + 2
-                count = 1
-                j = start
-                while j < len(template) and count > 0:
-                    if template[j] == '{': count += 1
-                    if template[j] == '}': count -= 1
+        n = len(inner)
+        while i < n:
+            ch = inner[i]
+            if ch == '{':
+                # find matching closing brace, handle nested braces
+                j = i + 1
+                depth = 1
+                while j < n and depth > 0:
+                    if inner[j] == '{':
+                        depth += 1
+                    elif inner[j] == '}':
+                        depth -= 1
                     j += 1
-                if count == 0:
-                    expr = template[start:j-1]
+                if depth == 0:
+                    # flush current literal
+                    if cur:
+                        parts.append(''.join(cur))
+                        cur = []
+                    expr = inner[i+1:j-1].strip()
+                    # treat expression as an identifier (caller may replace with real AST node)
                     parts.append(Identifier(expr))
-                i = j
+                    i = j
+                    continue
+                else:
+                    # unmatched brace -> treat as literal
+                    cur.append(ch)
+                    i += 1
             else:
-                current += template[i]
+                cur.append(ch)
                 i += 1
-        if current:
-            parts.append(current)
+
+        if cur:
+            parts.append(''.join(cur))
         return parts
 
     def To_CXX(self) -> str:
-        format_parts = []
-        args = []
+        fmt_parts: List[str] = []
+        args: List[str] = []
         for part in self.parts:
             if isinstance(part, str):
-                # Escape curly braces in literal parts
-                format_parts.append(part.replace('{', '{{').replace('}', '}}'))
+                # Escape braces (for formatting), backslashes and double quotes for C++ literal
+                p = (part
+                     .replace('{', '{{')
+                     .replace('}', '}}')
+                     .replace('\\', '\\\\')
+                     .replace('"', '\\"'))
+                fmt_parts.append(p)
             else:
-                format_parts.append("{}")
+                fmt_parts.append("{}")
                 args.append(part.To_CXX())
-        return f'fmt::format("{"".join(format_parts)}", {", ".join(args)})'
+
+        fmt = ''.join(fmt_parts)
+        if args:
+            return f'runtime::format("{fmt}", {", ".join(args)})'
+        else:
+            return f'runtime::format("{fmt}")'
 
 # `true, false`
-class BoolLiteral(_Literal):
+class BoolLiteral(Literal):
     """Boolean literal (true/false)"""
     def __init__(self, value: bool):
-        super().__init__(NodeType.BOOL_LITERAL)
+        super().__init__(NodeType.BOOLLiteral)
         self.value = value
 
     def To_CXX(self) -> str:
         return "true" if self.value else "false"
 
 # `void`
-class VoidLiteral(_Literal):
+class VoidLiteral(Literal):
     """Void literal (no value)"""
     def __init__(self):
-        super().__init__(NodeType.VOID_LITERAL)
+        super().__init__(NodeType.VOIDLiteral)
 
     def To_CXX(self) -> str:
         return "void"
 
-
-class NullPtrLiteral(_Literal):
+# `nullptr`
+class NullPtrLiteral(Literal):
     """Void literal (no value)"""
     def __init__(self):
-        super().__init__(NodeType.NULLPTR_LITERAL)
+        super().__init__(NodeType.NULLPTRLiteral)
 
     def To_CXX(self) -> str:
         return "void"
@@ -749,12 +787,12 @@ class NullPtrLiteral(_Literal):
 # POP
 # ==============================================
 
-class FuncDeclParam(_ASTNode):
+class FuncDeclParam(ASTNode):
     """Represents a single parameter in function declaration with default value"""
     def __init__(self, 
                  name: Identifier,
                  param_type: Identifier,
-                 default: Optional[_ASTNode] = None):
+                 default: Optional[ASTNode] = None):
         super().__init__(NodeType.FUNC_PARAM)
         self.name = name if isinstance(name, Identifier) else Identifier(name)
         self.param_type = param_type if isinstance(param_type, Identifier) else Identifier(param_type)
@@ -765,10 +803,10 @@ class FuncDeclParam(_ASTNode):
         default_str = f" = {self.default.To_CXX()}" if self.default else ""
         return f"{type_str} {self.name.To_CXX()}{default_str}"
 
-class FuncCallParam(_ASTNode):
+class FuncCallParam(ASTNode):
     """Represents a function call parameter (both named and positional)"""
     def __init__(self, 
-                 value: _ASTNode,
+                 value: ASTNode,
                  name: Optional[Identifier] = None):
         super().__init__(NodeType.FUNC_CALL_PARAM)
         self.value = value
@@ -779,14 +817,14 @@ class FuncCallParam(_ASTNode):
             return f".{self.name.To_CXX()}={self.value.To_CXX()}"
         return self.value.To_CXX()
 
-class FunctionCall(_Value, _ASTNode):
+class FunctionCall(Value, ASTNode):
     def __init__(self, 
                  target: Identifier,
                  params: List[FuncCallParam],
                  generic_params: List["GenericParam"] = []):
         super().__init__(NodeType.FUNCTION_CALL)
-        self.target = target if isinstance(target, _ASTNode) else Identifier(target)
-        self.params = params
+        self.target = target if isinstance(target, ASTNode) else Identifier(target)
+        self.params = [FuncCallParam(p) if not isinstance(p, FuncCallParam) else p for p in params]
         self.generic_params = generic_params or []
 
     def _template(self):
@@ -803,31 +841,66 @@ class FunctionCall(_Value, _ASTNode):
         
         return f"{self.target.To_CXX()}{self._template()}({', '.join(args)})"
 
-class FunctionDecl(_ASTNode):
+# New: simple member-initializer node for constructor initializer lists
+class MemberInit(ASTNode):
+    """Represents a member initializer entry like 'x(x)'"""
+    def __init__(self, name: Union[str, Identifier], expr: Union[ASTNode, str]):
+        super().__init__(NodeType.VAR_ASSIGN)
+        self.name = name if isinstance(name, Identifier) else Identifier(name)
+        self.expr = expr if isinstance(expr, ASTNode) else Identifier(str(expr))
+
+    def To_CXX(self) -> str:
+        return f"{self.name.To_CXX()}({self.expr.To_CXX()})"
+    
+class FunctionDecl(ASTNode):
     def __init__(self, 
                  name: Identifier,
-                 return_type: Identifier,
                  params: List[FuncDeclParam],
+                 return_type: Optional[Identifier] = "",
+                 generic_params: List["GenericParam"] = [],
                  body: Body = None,
-                 modifiers: List[_Modifier] = []):
+                 modifiers: List[Modifier] = [],
+                 var_assigns: List[FunctionCall] = []):
         super().__init__(NodeType.FUNCTION_DECL, body=body or Body([]))
         self.name = name if isinstance(name, Identifier) else Identifier(name)
         self.return_type = return_type if isinstance(return_type, Identifier) else Identifier(return_type)
         self.params = params
+        self.generic_params = generic_params or []
         self.modifiers = modifiers or []
+        self.var_assigns = var_assigns or []
 
     def To_CXX(self) -> str:
         param_list = ', '.join(p.To_CXX() for p in self.params)
         mods = ' '.join(ConvertModifier(m) for m in self.modifiers) if self.modifiers else ""
         body = self.body.To_CXX()
-        return_type = ConvertType(self.return_type.To_CXX())
-        
-        # Handle constructor special case
-        if self.name.To_CXX() == return_type:
-            return f"{mods}{self.name.To_CXX()}({param_list}) {{\n{body}\n}}"
-        return f"{mods}{return_type} {self.name.To_CXX()}({param_list}) {{\n{body}\n}}"
+        return_type = ConvertType(self.return_type.To_CXX()) or ""
+        generic_str = ''
+        if self.generic_params:
+            generic_str = f"template<{', '.join(p.To_CXX() for p in self.generic_params)}>\n"
+            mods = generic_str + mods if mods else generic_str
 
-class LambdaExpr(_Value, _ASTNode):
+        # Build initializer list (member-initializers) if provided
+        init_list = ""
+        if self.var_assigns:
+            inits = []
+            for va in self.var_assigns:
+                if isinstance(va, MemberInit):
+                    inits.append(va.To_CXX())
+                elif isinstance(va, FunctionCall):
+                    # convert simple FunctionCall -> name(args...)
+                    target_name = va.target.To_CXX()
+                    args = ', '.join(p.value.To_CXX() for p in va.params) if va.params else ""
+                    inits.append(f"{target_name}({args})")
+                elif isinstance(va, ASTNode):
+                    # fall back to its To_CXX()
+                    inits.append(va.To_CXX())
+                else:
+                    inits.append(str(va))
+            init_list = " : " + ", ".join(inits)
+
+        return f"{mods}{return_type} {self.name.To_CXX()}({param_list}){init_list}{{\n{body}\n}}"
+
+class LambdaExpr(Value, ASTNode):
     def __init__(self, 
                  params: List[Tuple[Identifier, 
                                    Identifier]],
@@ -847,10 +920,10 @@ class LambdaExpr(_Value, _ASTNode):
         )
         return_str = f" -> {ConvertType(self.return_type.To_CXX())}" if self.return_type else ""
         body_str = self.body.To_CXX()
-        return f"[{self.capture}]({params_str}){return_str} {{\n{body_str}\n}}"
+        return f"[{self.capture}]({params_str}){return_str} {{\n{body_str}\n}}".lstrip()
 
-class Return(_ASTNode):
-    def __init__(self, value: Optional["_Value"]):  # None for void returns
+class Return(ASTNode):
+    def __init__(self, value: Optional["Value"]):  # None for void returns
         super().__init__(NodeType.RETURN, value=value if value else None)
 
     def To_CXX(self):
@@ -860,12 +933,12 @@ class Return(_ASTNode):
 # OOP
 # ==============================================
 
-class GenericParam(_ASTNode):
+class GenericParam(ASTNode):
     """Represents a template parameter (type or non-type)"""
     def __init__(self, 
                  name: Identifier, 
                  param_type: Optional[Identifier] = None,
-                 default: Optional[_ASTNode] = None,
+                 default: Optional[ASTNode] = None,
                  is_type: bool = True):
         super().__init__(NodeType.GENERIC_PARAM)
         self.name = name if isinstance(name, Identifier) else Identifier(name)
@@ -877,24 +950,24 @@ class GenericParam(_ASTNode):
         if self.is_type:
             decl = f"typename {self.name.To_CXX()}"
         else:
-            type_str = self.param_type.To_CXX() if isinstance(self.param_type, _ASTNode) else self.param_type
+            type_str = self.param_type.To_CXX() if isinstance(self.param_type, ASTNode) else self.param_type
             decl = f"{type_str} {self.name.To_CXX()}"
         
         if self.default:
             decl += f" = {self.default.To_CXX()}"
         return decl
 
-class ClassNode(_ASTNode):
+class ClassNode(ASTNode):
     def __init__(self,
                 name: Identifier,
                 body: Body = Body([]),
                 generic_params: List["GenericParam"] = [],
                 parents: List[Union[str, "Identifier"]] = [], 
-                modifiers: List["_Modifier"] = []):
+                modifiers: List["Modifier"] = []):
         super().__init__(NodeType.CLASS_DEFINE, body=body)
         self.name = name if isinstance(name, Identifier) else Identifier(name)
         self.generic_params = generic_params or []
-        self.parents = [p if isinstance(p, (Identifier, _ASTNode)) else Identifier(p) for p in (parents or [])]
+        self.parents = [p if isinstance(p, (Identifier, ASTNode)) else Identifier(p) for p in (parents or [])]
         self.modifiers = modifiers or []
 
         names = [p.name.To_CXX() for p in generic_params]
@@ -913,14 +986,14 @@ class ClassNode(_ASTNode):
 
     def _parents(self):
         if not self.parents: return ""
-        return " : public " + ", ".join(p.To_CXX() if isinstance(p, _ASTNode) else str(p) for p in self.parents)
+        return " : public " + ", ".join(p.To_CXX() if isinstance(p, ASTNode) else str(p) for p in self.parents)
 
-class ClassInstantiation(_Value, _ASTNode):
+class ClassInstantiation(Value, ASTNode):
     """Represents creating a new class instance (constructor call)"""
     def __init__(self,
                  class_name: Identifier,
-                 generic_args: List[Union[str, Identifier, _ASTNode]] = [],
-                 constructor_args: List[Union[_ASTNode, FuncCallParam]] = []):
+                 generic_args: List[Union[str, Identifier, ASTNode]] = [],
+                 constructor_args: List[Union[ASTNode, FuncCallParam]] = []):
         super().__init__(NodeType.CLASS_INSTANTIATION)
         self.class_name = class_name if isinstance(class_name, Identifier) else Identifier(class_name)
         self.generic_args = generic_args or []
@@ -929,7 +1002,7 @@ class ClassInstantiation(_Value, _ASTNode):
     def To_CXX(self) -> str:
         generic_str = ''
         if self.generic_args:
-            generic_str = f"<{', '.join(a.To_CXX() if isinstance(a, _ASTNode) else str(a) for a in self.generic_args)}>"
+            generic_str = f"<{', '.join(a.To_CXX() if isinstance(a, ASTNode) else str(a) for a in self.generic_args)}>"
         
         args_str = ''
         if self.constructor_args:
@@ -940,10 +1013,10 @@ class ClassInstantiation(_Value, _ASTNode):
         
         return f"{self.class_name.To_CXX()}{generic_str}({args_str})"
 
-class ClassDivider(_ASTNode):
+class ClassDivider(ASTNode):
     """Divides class body into sections based on access modifiers"""
     def __init__(self, 
-                 access: Literal["public", "protected", "private"],
+                 access: tLiteral["public", "protected", "private"],
                  body: Body):
         super().__init__(NodeType.CLASS_DIVIDER, body=body)
         self.access = access.lower()  # Normalize to lowercase
@@ -956,10 +1029,10 @@ class ClassDivider(_ASTNode):
 # Control Flow Structures
 # ==============================================
 
-class IfExpr(_ASTNode):
-    def __init__(self, condition: _ASTNode, 
+class IfExpr(ASTNode):
+    def __init__(self, condition: ASTNode, 
                  body: Body,
-                 elifs: List[Tuple[_ASTNode, Body]] = [],
+                 elifs: List[Tuple[ASTNode, Body]] = [],
                  else_body: Body = []):
         super().__init__(NodeType.IF_EXPR, body=body)
         self.condition = condition
@@ -981,10 +1054,10 @@ class IfExpr(_ASTNode):
             
         return result
 
-class TernaryExpr(_Value, _ASTNode):
-    def __init__(self, condition: _ASTNode, 
-                 true_expr: _ASTNode, 
-                 false_expr: _ASTNode):
+class TernaryExpr(Value, ASTNode):
+    def __init__(self, condition: ASTNode, 
+                 true_expr: ASTNode, 
+                 false_expr: ASTNode):
         super().__init__(NodeType.TERNARY_EXPR)
         self.condition = condition
         self.true_expr = true_expr
@@ -993,37 +1066,42 @@ class TernaryExpr(_Value, _ASTNode):
     def To_CXX(self) -> str:
         return f"{self.condition.To_CXX()} ? {self.true_expr.To_CXX()} : {self.false_expr.To_CXX()}"
 
-class Case(_ASTNode):
+class Case(ASTNode):
     """Case syntax"""
-    def __init__(self, case: _Value, body: Body):
+    def __init__(self, case: Value, body: Body):
         super().__init__(NodeType.CASE, case, body)
 
     def To_CXX(self):
-        return "case {self.case.To_CXX()}:\n{self.body.To_CXX()}"
+        # use the stored value and body properly formatted
+        case_val = self.value.To_CXX() if hasattr(self, "value") and self.value is not None else ""
+        body_cxx = self.body.To_CXX() if hasattr(self, "body") and self.body is not None else ""
+        return f"case {case_val}:\n{body_cxx}"
 
-class Switch(_ASTNode):
+class Switch(ASTNode):
     """Switch case syntax"""
-    def __init__(self, subject: _Value, cases: Body):
-        super().__init__(NodeType.Switch, value=subject, body=cases)
+    def __init__(self, subject: Value, cases: Body):
+        # keep value/cases in the same attributes used elsewhere
+        super().__init__(NodeType.SWITCH if hasattr(NodeType, "SWITCH") else NodeType.CPP_BLOCK, value=subject, body=cases)
 
     def To_CXX(self):
-        return "switch({self.subject.To_CXX()}) \{\n{self.body.To_CXX()}\}"
-
+        subj = self.value.To_CXX() if hasattr(self, "value") and self.value is not None else ""
+        body_cxx = self.body.To_CXX() if hasattr(self, "body") and self.body is not None else ""
+        return f"switch({subj}) {{\n{body_cxx}\n}}"
 # ==============================================
 # Loops
 # ==============================================
 
-class WhileLoop(_ASTNode):
-    def __init__(self, condition: _ASTNode, body: Body):
+class WhileLoop(ASTNode):
+    def __init__(self, condition: ASTNode, body: Body):
         super().__init__(NodeType.WHILE_LOOP, body=body)
         self.condition = condition
 
     def To_CXX(self) -> str:
         return f"while ({self.condition.To_CXX()}) {{\n{self.body.To_CXX()}\n}}"
 
-class ForInLoop(_ASTNode):
+class ForInLoop(ASTNode):
     def __init__(self, var_name: Identifier,
-                 iterable: _ASTNode,
+                 iterable: ASTNode,
                  body: Body):
         super().__init__(NodeType.FOR_IN_LOOP, body=body)
         self.var_name = var_name if isinstance(var_name, Identifier) else Identifier(var_name)
@@ -1032,10 +1110,10 @@ class ForInLoop(_ASTNode):
     def To_CXX(self) -> str:
         return f"for (auto&& {self.var_name.To_CXX()} : {self.iterable.To_CXX()}) {{\n{self.body.To_CXX()}\n}}"
 
-class CStyleForLoop(_ASTNode):
-    def __init__(self, init: _ASTNode,
-                 condition: _ASTNode,
-                 update: _ASTNode,
+class CStyleForLoop(ASTNode):
+    def __init__(self, init: ASTNode,
+                 condition: ASTNode,
+                 update: ASTNode,
                  body: Body):
         super().__init__(NodeType.C_STYLE_FOR_LOOP, body=body)
         self.init = init
@@ -1046,14 +1124,14 @@ class CStyleForLoop(_ASTNode):
         return (f"for ({self.init.To_CXX()}; {self.condition.To_CXX()}; {self.update.To_CXX()}) "
                 f"{{\n{self.body.To_CXX()}\n}}")
 
-class Break(_ASTNode):
+class Break(ASTNode):
     def __init__(self):
         super().__init__(NodeType.BREAK)
 
     def To_CXX(self) -> str:
         return "break;"
 
-class Continue(_ASTNode):
+class Continue(ASTNode):
     def __init__(self):
         super().__init__(NodeType.CONTINUE)
 
@@ -1064,7 +1142,7 @@ class Continue(_ASTNode):
 # Exception Handling
 # ==============================================
 
-class TryCatch(_ASTNode):
+class TryCatch(ASTNode):
     def __init__(self, try_body: Body, 
                  catch_blocks: List[Tuple[Identifier, Body]],
                  finally_body: Optional[Body] = []):
@@ -1087,11 +1165,35 @@ class TryCatch(_ASTNode):
         
         return try_block + catch_blocks_str + finally_block
 
-class Throw(_ASTNode):
-    def __init__(self, exception: _ASTNode):
+class Throw(ASTNode):
+    def __init__(self, exception: ASTNode):
         super().__init__(NodeType.THROW)
         self.exception = exception
 
     def To_CXX(self) -> str:
         return f"throw {self.exception.To_CXX()};"
 
+def main() -> int:
+    test_interpolation = InterpolatedStringLiteral(r'$"Hello, {name}! Today is {day_of_week}."')
+    print(test_interpolation.To_CXX())
+
+    class_constructor = FunctionDecl(
+        name=Identifier("MyClass"),
+        generic_params=[GenericParam(Identifier("T"))],
+        params=[
+            FuncDeclParam(param_type="int", default=NumericLiteral("42"), name=Identifier("value")),
+            FuncDeclParam(param_type="string", default=NormalStringLiteral("example"), name=Identifier("name"))
+        ],
+        # use MemberInit for initializer list entries
+        var_assigns=[
+            MemberInit("value", Identifier("value")),
+            MemberInit("name", Identifier("name"))
+        ],
+        body=Body([])
+    )
+    print(class_constructor.To_CXX())
+    return 0
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(main())
