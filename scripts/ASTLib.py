@@ -484,40 +484,9 @@ class Identifier(Value, ASTNode):
     def To_CXX(self) -> str:
         return str(self.value).strip()
 
-# Condition Nodes (==, <=, >=, !=, >, <)
-class Comparison(Condition):
-    """Represents comparison operations (==, <=, >=, etc.)"""
-    def __init__(self, left: ASTNode, op: str, right: ASTNode):
-        if op not in ConditionOperators:
-            raise ValueError(f"Invalid comparison operator: {op}")
-        super().__init__(NodeType.COMPARISON)
-        self.left = left
-        self.op = op
-        self.right = right
-
-    def To_CXX(self) -> str:
-        return f"{self.left.To_CXX()} {self.op} {self.right.To_CXX()}".strip()
-
-# Boolean Condition Nodes (and, or, not)
-class BooleanCondition(Condition):
-    """Represents boolean operations (and, or, not)"""
-    def __init__(self, op: str, operands: List[ASTNode]):
-        super().__init__(NodeType.CONDITION)
-        self.op = op.lower()  # 'and', 'or', 'not'
-        self.operands = operands
-
-    def To_CXX(self) -> str:
-        if self.op == 'not':
-            if len(self.operands) != 1:
-                raise ValueError("'not' operator requires exactly one operand")
-            return f"!({self.operands[0].To_CXX()})"
-        
-        cxx_op = '&&' if self.op == 'and' else '||'
-        return f" {cxx_op} ".join(op.To_CXX() for op in self.operands).strip()
-
 # Binary Expression Nodes (arithmetic, bitwise)
 class BinaryExpression(Expression):
-    """Represents binary operations (+, -, *, /, %, &, |, ^, <<, >>)"""
+    """Represents binary operations (+, -, *, /, %, &, |, ^, <<, >>, &&, ||)"""
     def __init__(self, left: ASTNode, op: str, right: ASTNode):
         if op not in BinaryOperators:
             raise ValueError(f"Invalid binary operator: {op}")
