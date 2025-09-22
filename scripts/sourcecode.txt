@@ -1,25 +1,4 @@
-// ==== Level 1. Hello World (Basic I/O) ====
-@include <iostream>
-main:
-    io::Output("Hello, world!")
-
-    // Input example
-    string name = io::Input("Enter your name: ")
-    io::Output($"Hello, {name}!")
-
-    // Write to file
-    string data = "Sample data\nSecond line"
-    io::File file = Open("output.text", "rw")
-
-    // Read from file
-    string content = file.Read()
-    io::Output("File content:")
-    io::Output(content)
-    return 0
-
-
-
-// ==== Level 2. Fibonacci Sequence ====
+// ==== Level 1. Fibonacci Sequence ====
 func main() -> int { // or `main:`
     list<int> nums = [0, 1]  // Explicit type
 
@@ -29,15 +8,15 @@ func main() -> int { // or `main:`
         nums.append(now + prev)
     }
 
-    io::Output($"Fibonacci Sequence ({nums.Size} terms):")
-    io::Output(nums.Join(", "))
+    runtime::Out($"Fibonacci Sequence ({nums.Size} terms):")
+    runtime::Out(nums.Join(", "))
     return 0
 }
 
 
-// ==== Level 3. Rocket Simulator ====
-@include "Space"
-@using namespace Space
+// ==== Level 2. Rocket Simulator ====
+@include "Space.hpp" // C++ interop
+@usingns Space
 
 enum LaunchError { Success, FuelLow, EngineFailure }
 
@@ -76,7 +55,7 @@ class Satellite {
     }
 
     func Activate() {
-        io::Output($"Hello from ${name}!")
+        runtime::Out($"Hello from ${name}!")
     }
 }
 
@@ -88,15 +67,15 @@ main:
             rocket.payload.Activate()
         }
         case LaunchError err => {
-            io::Output($"Launch failed: ${err}")
+            runtime::Out($"Launch failed: ${err}")
         }
     }
 
-    return 0
+    return 0 // or `runtime::Halt()`
 
 
 
-// ==== Level 4. Kinematics ====
+// ==== Level 3. Kinematics ====
 
 class Vector3 {
     public:
@@ -162,15 +141,15 @@ func main() -> int {
     for int frame in math::Range(0, 100):
         body.ApplyForce(gravity * body.mass)
         body.Update(timestep)
-        io::Output($"Frame {frame}: Position = {body.position.ToString()}")
+        runtime::Out($"Frame {frame}: Position = {body.position.ToString()}")
     return 0
 }
 
-// ==== Level 5. Game Entities ====
+// ==== Level 4. Game Entities ====
 
 class Entity {
     virtual func GetName() -> string = 0 // Override necessary
-    virtual func Update() -> void { io::Output("Update!") } // Override not necessary
+    virtual func Update() -> void { runtime::Out("Update!") } // Override not necessary
 }
 
 class Player : public Entity {
@@ -211,15 +190,15 @@ func main() -> int {
 
     for entity in entities {
         entity.Update()
-        io::Output(entity.GetName())
+        runtime::Out(entity.GetName())
     }
     return 0
 }
 
-// ==== Level 6. C++ interop ====
+// ==== Level 5. C++ interop ====
 
-@include <iostream>
-@using namespace std
+@include "my_math.esp" // Espresso Lang includes
+@usingns std
 @cpp {
     // Pure C++. Need C++ syntax, not Espresso
     bool is_prime(int n) {

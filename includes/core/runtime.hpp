@@ -1310,7 +1310,52 @@ namespace runtime {
         }
     }
     
+    template <typename... Args>
+    void Out(const Args&... args) {
+        ((std::cout << args), ...); // fold expression
+    }
 
+    template <typename... Args>
+    void Outln(const Args&... args) {
+        ((std::cout << args), ...);
+        std::cout << std::endl;
+    }
+
+    StringWrapper In(const std::string& prompt = "") {
+        if (!prompt.empty())
+            std::cout << prompt;
+        std::string input;
+        std::getline(std::cin, input);
+        return StringWrapper(input);
+    }
+
+    StringWrapper Inln(const std::string& prompt = "") {
+        if (!prompt.empty())
+            std::cout << prompt << std::endl;
+        std::string input;
+        std::getline(std::cin, input);
+        return StringWrapper(input);
+    }
+
+    void Err(const std::string& msg) {
+        std::cerr << runtime::cast<StringWrapper>(msg);
+    }
+
+    void Errln(const std::string& msg) {
+        std::cerr << runtime::cast<StringWrapper>(msg) << std::endl;
+    }
+
+    void Log(const std::string& msg) {
+        std::clog << runtime::cast<StringWrapper>(msg);
+    }
+
+    void Logln(const std::string& msg) {
+        std::clog << runtime::cast<StringWrapper>(msg) << std::endl;
+    }
+
+    void Halt(int code = 0) {
+        std::exit(code);
+    }
 }
 #endif // RUNTIME_NSPACE
 // Lambda type wrapper
@@ -1358,4 +1403,3 @@ std::shared_ptr<Object> LambdaWrapper<Ret, Args...>::invoke_impl(std::vector<std
     }
 }
 #endif // RUNTIME_HPP
-

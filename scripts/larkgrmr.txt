@@ -1,0 +1,141 @@
+start: (statement | NEWLINE)*
+
+statement: var_declare
+         | var_assign
+         | multi_var_declare
+         | multi_var_assign
+         | function_decl
+         | main_function
+         | function_call
+         | class_def
+         | if_expr
+         | while_loop
+         | for_in_loop
+         | c_style_for_loop
+         | return_stmt
+         | break_stmt
+         | continue_stmt
+         | try_catch
+         | throw_stmt
+         | annotation
+         | comment
+         | cpp_block
+         | expression ";"
+
+expression: comparison
+          | binary_expr
+          | unary_expr
+          | literal
+          | identifier
+          | function_call
+          | ternary_expr
+          | lambda_expr
+
+comparison: binary_expr (COMP_OP binary_expr)*
+binary_expr: unary_expr (BIN_OP unary_expr)*
+unary_expr: (UNARY_OP)* atom
+atom: literal
+    | identifier
+    | function_call
+    | "(" expression ")"
+    | "{" [expression ("," expression)*] "}" -> list_literal
+    | "{{" [kv_pair ("," kv_pair)*] "}}" -> map_literal
+
+kv_pair: expression ":" expression
+
+literal: NUMBER -> numeric_literal
+       | STRING -> string_literal
+       | RAW_STRING -> raw_string_literal
+       | INTERP_STRING -> interpolated_string_literal
+       | BOOLEAN -> bool_literal
+       | "nullptr" -> null_ptr_literal
+       | "void" -> void_literal
+
+identifier: ID
+
+// C++ style variable declarations: int x = 42;
+var_declare: [modifier+] TYPE ID ["=" expression] ";"
+var_assign: ID "=" expression ";"
+multi_var_declare: [modifier+] TYPE ID ("," ID)* ";"
+multi_var_assign: ID ("," ID)* "=" expression ";"
+
+// Traditional function declaration
+function_decl: [modifier+] "func" ID [generic_params] "(" [func_param ("," func_param)*] ")" ["->" TYPE] [":" member_init ("," member_init)*] "{" statement* "}"
+
+// Special main function syntax: main: { ... }
+main_function: "main" ":" "{" statement* "}"
+
+function_call: ID [generic_args] "(" [func_call_param ("," func_call_param)*] ")"
+
+func_param: ID ":" TYPE ["=" expression]
+func_call_param: [ID "="] expression
+generic_params: "<" generic_param ("," generic_param)* ">"
+generic_param: ID [":" TYPE] ["=" expression]
+generic_args: "<" TYPE ("," TYPE)* ">"
+member_init: ID "(" expression ")"
+
+class_def: [modifier+] "class" ID [generic_params] [":" inheritance] "{" class_member* "}"
+class_member: access_specifier ":" statement*
+           | statement
+inheritance: TYPE ("," TYPE)*
+access_specifier: "public" | "private" | "protected"
+
+
+if_expr: "if" expression "{" statement* "}" ["elif" expression "{" statement* "}"]* ["else" "{" statement* "}"]
+ternary_expr: expression "?" expression ":" expression
+
+while_loop: "while" expression "{" statement* "}"
+for_in_loop: "for" ID "in" expression "{" statement* "}"
+c_style_for_loop: "for" "(" var_declare expression ";" expression ")" "{" statement* "}"
+
+return_stmt: "return" [expression] ";"
+break_stmt: "break" ";"
+continue_stmt: "continue" ";"
+
+try_catch: "try" "{" statement* "}" "catch" "(" TYPE ID ")" "{" statement* "}" ["finally" "{" statement* "}"]
+throw_stmt: "throw" expression ";"
+
+lambda_expr: "[" [capture] "]" "(" [func_param ("," func_param)*] ")" ["->" TYPE] "{" statement* "}"
+capture: "=" | "&" | ID ("," ID)*
+
+annotation: "@define" ID "=" expression
+          | "@assert" expression
+          | "@io"
+          | "@safe"
+          | "@unsafe"
+          | "@panic" expression
+          | "@namespace" ID "{" statement* "}"
+
+modifier: "private" -> private_modifier
+        | "public" -> public_modifier
+        | "protected" -> protected_modifier
+        | "const" -> const_modifier
+        | "constexpr" -> constexpr_modifier
+        | "consteval" -> consteval_modifier
+        | "static" -> static_modifier
+        | "abstract" -> abstract_modifier
+        | "override" -> override_modifier
+        | "virtual" -> virtual_modifier
+
+comment: LINE_COMMENT | BLOCK_COMMENT
+cpp_block: CPP_BLOCK
+
+COMP_OP: "==" | "!=" | "<" | ">" | "<=" | ">="
+BIN_OP: "+" | "-" | "*" | "/" | "%" | "&" | "|" | "^" | "<<" | ">>" | "&&" | "||"
+       | "+=" | "-=" | "*=" | "/=" | "%=" | "&=" | "|=" | "^=" | "<<=" | ">>="
+UNARY_OP: "!" | "-" | "+" | "~"
+
+TYPE: /[A-Za-z_][A-Za-z0-9_<>,\s]*/  // Handles complex types like list<int>, Map<string, int>
+ID: /[A-Za-z_][A-Za-z0-9_]*/
+NUMBER: /[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?/
+STRING: /"([^"\\]|\\.)*"/
+RAW_STRING: /R"([^"\\]|\\.)*"/
+INTERP_STRING: /\$"([^"\\]|\\.)*"/
+BOOLEAN: "true" | "false"
+LINE_COMMENT: /\/\/[^\n]*/
+BLOCK_COMMENT: /\/\*.*?\*\//
+CPP_BLOCK: /__CPP_BLOCK_\d+__/
+
+NEWLINE: /\n+/
+%ignore " "
+%ignore "\t"

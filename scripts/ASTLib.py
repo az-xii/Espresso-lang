@@ -17,11 +17,12 @@ from numpy import generic, var
 class NodeType(Enum):
     """Comprehensive node types for the Espresso language AST."""
 
-    NEWLINE = "NEWLINE"
+    NEWLINE     = "NEWLINE"
     INDENT = "INDENT"
     IDENTIFIER = "IDENTIFIER"
     BODY = "BODY"
     COMMENT = "COMMENT"
+
     CPP_BLOCK = "CPP_BLOCK"
 
     ANNOTATION_DEFINE = "ANNOTATION_DEFINE"
@@ -220,10 +221,11 @@ class ASTNode(ABC):
         body (Optional["Body"]): The body of the node, if applicable.
         modifiers (Optional[List[Modifier]]): List of modifiers associated with the node.
     """
-    def __init__(self, node_type: NodeType,
-                value: Optional[Any] = None,
-                body: Optional["Body"] = None,
-                modifiers: Optional[List["Modifier"]] = None):
+    def __init__(self, 
+                 node_type: NodeType,
+                 value: Optional[Any] = None,
+                 body: Optional["Body"] = None,
+                 modifiers: Optional[List["Modifier"]] = None):
     
         self.node_type: NodeType = node_type
         self.value: Optional[Any] = value
@@ -295,6 +297,52 @@ class Body():
             stmt_lines = content.split('\n')
             lines.extend(f"{indent}{line}" for line in stmt_lines)
         return '\n'.join(lines)
+
+class CPPBlock(ASTNode):
+    def __init__(self, text: str):
+        super().__init__(NodeType.CPP_BLOCK, text)
+
+    def _clean_block(block: str) -> str:
+        # Preserve comment markers and avoid stripping content too aggressively.
+        if not block:
+            return ""
+
+        # Remove exactly one outer pair of braces if present (keep interior spacing)
+        first = block.find('{')
+        last = block.rfind('}')
+        if first != -1 and last != -1 and first < last:
+            inner = block[first+1:last]
+        else:
+            inner = block
+
+        # Keep original leading spaces; split into lines and trim only blank leading/trailing lines
+        lines = inner.splitlines()
+        while lines and lines[0].strip() == "":
+            lines.pop(0)
+        while lines and lines[-1].strip() == "":
+            lines.pop()
+
+        if not lines:
+            return ""
+
+        # Compute minimum indentation from non-empty, non-comment lines
+        indents = []
+        for line in lines:
+            if line.strip() and not line.strip().startswith("//"):
+                indents.append(len(line) - len(line.lstrip()))
+
+        min_indent = min(indents) if indents else 0
+
+        # Remove that many spaces from every line when possible (leave short/comment lines intact)
+        new_lines = [
+            (line[min_indent:] if len(line) >= min_indent else line)
+            for line in lines
+        ]
+
+        return "\n".join(new_lines).rstrip()
+
+    def To_CXX(self):
+        return self._clean_block(self.value)
 
 class Program():
     def __init__(self, body: Body):
@@ -441,7 +489,7 @@ class AnnotationSafe(Annotation):
         super().__init__(NodeType.ANNOTATION_SAFE)
 
     def To_CXX(self):
-        return f"//SAFE:"
+        return f"//SAFE:\n"
 
 class AnnotationUnsafe(Annotation):
     """Unsafe operations"""
@@ -449,8 +497,9 @@ class AnnotationUnsafe(Annotation):
         super().__init__(NodeType.ANNOTATION_UNSAFE)
 
     def To_CXX(self):
-        return f"//UNSAFE:"
+        return f"//UNSAFE:\n"
 
+#
 class AnnotationPanic(Annotation):
     """Intentional Crash"""
     def __init__(self, value: "Literal"):
@@ -458,7 +507,8 @@ class AnnotationPanic(Annotation):
 
     def To_CXX(self):
         return f"abort({self.value})"
-    
+
+# `@namespace std {...}``
 class AnnotationNamespace(Annotation):
     """Nampespace"""
     def __init__(self, ns_name: Union[str, "Identifier"], children: Union[List["ASTNode"], "Body"]):
@@ -468,6 +518,10 @@ class AnnotationNamespace(Annotation):
     def To_CXX(self):
         ns_name = self.value.To_CXX() if self.value is not None else ""
         return f"namespace {ns_name} {{\n{self.body.To_CXX()}\n}}"
+    
+# `using namespace std`
+class AnnotationUsingNamespace(Annotation):
+    """Using a Namespace"""
 
 
 
@@ -957,42 +1011,15 @@ class ClassNode(ASTNode):
         if not self.parents: return ""
         return " : public " + ", ".join(p.To_CXX() if isinstance(p, ASTNode) else str(p) for p in self.parents)
 
-class ClassInstantiation(Value, ASTNode):
-    """Represents creating a new class instance (constructor call)"""
-    def __init__(self,
-                 class_name: Identifier,
-                 generic_args: List[Union[str, Identifier, ASTNode]] = [],
-                 constructor_args: List[Union[ASTNode, FuncCallParam]] = []):
-        super().__init__(NodeType.CLASS_INSTANTIATION)
-        self.class_name = class_name if isinstance(class_name, Identifier) else Identifier(class_name)
-        self.generic_args = generic_args or []
-        self.constructor_args = constructor_args or []
-
-    def To_CXX(self) -> str:
-        generic_str = ''
-        if self.generic_args:
-            generic_str = f"<{', '.join(a.To_CXX() if isinstance(a, ASTNode) else str(a) for a in self.generic_args)}>"
-        
-        args_str = ''
-        if self.constructor_args:
-            if any(isinstance(a, FuncCallParam) for a in self.constructor_args):
-                args_str = "{" + ", ".join(a.To_CXX() for a in self.constructor_args) + "}"
-            else:
-                args_str = ", ".join(a.To_CXX() for a in self.constructor_args)
-        
-        return f"{self.class_name.To_CXX()}{generic_str}({args_str})"
-
 class ClassDivider(ASTNode):
     """Divides class body into sections based on access modifiers"""
     def __init__(self, 
-                 access: tLiteral["public", "protected", "private"],
-                 body: Body):
-        super().__init__(NodeType.CLASS_DIVIDER, body=body)
-        self.access = access.lower()  # Normalize to lowercase
-        self.body.indent_level = 0 # Ensure body has no extra indentation
+                 access: Identifier):
+        super().__init__(NodeType.CLASS_DIVIDER, value=access if isinstance(access, Identifier) else Identifier(access))
 
     def To_CXX(self) -> str:
-        return f"{self.access.lower()}:\n{self.body.To_CXX()}" if self.body else ""
+        access_str = self.value.To_CXX().lower() if hasattr(self, "value") and self.value is not None else "public"
+        return f"{access_str}:"
 
 # ==============================================
 # Control Flow Structures
@@ -1050,7 +1077,7 @@ class Switch(ASTNode):
     """Switch case syntax"""
     def __init__(self, subject: Value, cases: Body):
         # keep value/cases in the same attributes used elsewhere
-        super().__init__(NodeType.SWITCH if hasattr(NodeType, "SWITCH") else NodeType.CPP_BLOCK, value=subject, body=cases)
+        super().__init__(NodeType.SWITCH, value=subject, body=cases)
 
     def To_CXX(self):
         subj = self.value.To_CXX() if hasattr(self, "value") and self.value is not None else ""

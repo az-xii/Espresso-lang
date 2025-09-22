@@ -14,39 +14,9 @@ from dataclasses import dataclass
 __all__ = ["Lexer", "Token"]
 
 SAMPLE = r"""
-// ==== Level 6. C++ interop ====
-
-@include <iostream>
-@using namespace std
-@cpp {
-    // Pure C++. Need C++ syntax, not Espresso
-    bool is_prime(int n) {
-        if n < 2 {
-            return false;
-        }
-        for int i = 2; i <= int(math::sqrt(n)); i+=1 {
-            if n % i == 0 {
-                return false;
-            }
-        }
-        return true;
-    }
+func main() -> int {
+    runtime::Output("Hello, World")
 }
-
-main: 
-    list<int> primes = []
-    // Use C++ function in Espresso
-    @cpp { cout << "Finding primes under 50..." << endl; }
-
-    for int num = 0, num < 50, num += 1 {
-        if is_prime(num) {
-            primes.append(num)
-        }
-    }
-
-    cout << $"Primes under 50: {primes.Join(", ")}" << endl
-
-    return 0
 """
 # -------------------- Preprocessor for balanced @cpp { ... } blocks --------------------
 def extract_cpp_blocks(source: str, marker: str = "@cpp") -> Tuple[str, Dict[str, str]]:
@@ -187,7 +157,7 @@ def clean_block(block: str) -> str:
 
 # -------------------- Grammar --------------------
 GRAMMAR = r"""
-start: (CPP_BLOCK | LITERAL | COMMENTS | DECOR | TYPE | KEYW | OP | ID | DELIM | ANGLE_PATH)*
+start: (CPP_BLOCK | LITERAL | COMMENTS | DECOR | TYPE | KEYW | OP | PATH | DELIM | ANGLE_PATH)*
 
 CPP_BLOCK.10: /__CPP_BLOCK_\d+__/
 
@@ -225,16 +195,15 @@ BOOLEAN: "true" | "false"
 DECOR: "@include" | "@using" | "@alias" | "@namespace" | "@assert" 
      | "@define" | "@panic" | "@cpp" | "@operator" | "@cast"
 
-TYPE: "byte" | "short" | "int" | "long" | "ubyte" | "ushort" | "ulong"
+TYPE.10: "byte" | "short" | "int" | "long" | "ubyte" | "ushort" | "ulong"
     | "float" | "double" | "fixed16_16" | "fixed32_32" | "char" | "string"
     | "bool" | "void" | "any" | "list" | "collection" | "map" | "set"
     | "tuple" | "auto" | "union" | "lambda"
 
-KEYW: "func" | "class" | "this" | "super" | "private" | "public" | "protected"
+KEYW.10: "func" | "class" | "this" | "super" | "private" | "public" | "protected"
     | "const" | "consteval" | "constexpr" | "static" | "override" | "virtual"
     | "if" | "elif" | "else" | "switch" | "case" | "while" | "for" | "in"
-    | "break" | "continue" | "try" | "catch" | "throw" | "main" | "return"
-    | "namespace"
+    | "break" | "continue" | "try" | "catch" | "throw" | "main" | "return" | "main"
 
 OP: OP_MULTI | OP_SINGLE
 OP_MULTI: "::" | "->" | "=>" | "++" | "--" | "+=" | "-=" | "*=" | "/="
@@ -242,7 +211,9 @@ OP_MULTI: "::" | "->" | "=>" | "++" | "--" | "+=" | "-=" | "*=" | "/="
         | "->"
 OP_SINGLE: /[+\-*\/%=<>!&|^~]/
 
-ID: /[A-Za-z_][A-Za-z0-9_]*/
+# PATH: identifiers that may include ::, ., -> separators and simple [index] parts.
+# Note: this is intended to cover common path forms like `runtime::Output`, `obj.field`, `ptr->field`, `mydict[key]`.
+PATH: /[A-Za-z_][A-Za-z0-9_]*(?:(?:(?:::)|->|\.)[A-Za-z_][A-Za-z0-9_]*)*(?:\[[^\]\n]+\])*/
 
 DELIM: "(" | ")" | "[" | "]" | "{" | "}" | "," | ";" | ":" | "?" | "." 
 
@@ -313,7 +284,7 @@ class Lexer:
         while i < len(interim):
             t = interim[i]
             # merge when a base identifier/type is immediately followed by an ANGLE_PATH token
-            if t["type"] in ("ID", "TYPE") and i + 1 < len(interim) and interim[i+1]["type"] == "ANGLE_PATH":
+            if t["type"] in ("PATH", "TYPE") and i + 1 < len(interim) and interim[i+1]["type"] == "ANGLE_PATH":
                 combined = f"{t['val']}{interim[i+1]['val']}"
                 tokens.append(Token("TYPE", t["line"], t["col"], combined))
                 i += 2
@@ -361,12 +332,20 @@ def main(argv: Iterable[str] = None):
     ap = argparse.ArgumentParser(description="Tokenize an AZ source file using Lark.")
     ap.add_argument("file", nargs="?", help="Source file path. If omitted uses embedded sample.")
     ap.add_argument("--json", action="store_true", help="Emit JSON list of tokens.")
+    ap.add_argument("--encoding", default="utf-8", help="File encoding (default: utf-8).")
     ap.add_argument("--max", type=int, default=120, help="Max length of printed token.value (when not using --json).")
     ap.add_argument("--no-comments", action="store_true", help="Remove comment tokens from output.")
     args = ap.parse_args(list(argv) if argv is not None else None)
 
     if args.file:
-        text = open(args.file, "r", encoding="utf-8").read()
+        if not os.path.exists(args.file):
+            print(f"Error: Source file not found: {args.file}", file=sys.stderr)
+            sys.exit(1)
+        if not os.path.isfile(args.file):
+            print(f"Error: Expected a file, but got a directory: {args.file}", file=sys.stderr)
+            sys.exit(1)
+        encoding = args.encoding if args.encoding else "utf-8"
+        text = open(args.file, "r", encoding=encoding).read()
     else:
         text = SAMPLE
 
