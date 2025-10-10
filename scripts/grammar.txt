@@ -593,16 +593,46 @@ main:
 
 ---
 
-### **Goals for GPT-5**
+Patterns:
+// Capitalisation refers to lexer token type
+// '"..."' literals refer to lexer token value
+// '_' prefix refers to having a handler function
+generic_lst: "<" generic ( "," generic )* ">"
+generic: "typename" ID
 
-1. Implement **Lark grammar** for Espresso with all features above.
-2. Write **tokeniser, parser, semantic analyser** in Python.
-3. Build **ASTL.py** to emit C++14/17 code with `espresso_runtime.hpp`.
-4. Implement runtime composite types, generics, safe cast, and decorators.
-5. Make architecture modular for microcontroller targets & REPL.
+params_decl_lst: "(" param_decl ( "," param_decl )* ")"
+params_decl: TYPE ID ( "=" value)
 
----
+params_call_lst: "(" params_call ( "," params_call )* ")"
+params_call: ID ( "=" value)
 
-Do you fully understand this spec, and can you implement the compiler pipeline in Python to produce working C++ code according to the workflow above?
+value: literal | _ternary_expr | _binary_expr | _unary_expr | _func_call |
+
+literal: _vec_literal | _map_literal | _boolean_literal | _numerical_literal
+        | _raw_string_literal | _interpolated_string_literal | _normal_string_literal
+        | _void_literal | _nullptr_literal | ID | PATH
+
+_vec_literal: "[" ( value : ( "," value )* ) "]"
+_map_literal: "[" ( value ":" value ( "," value ":" value )* ) "]"
+
+_raw_string_literal: RAW_STRING
+_interpolated_string_literal: INTERP_STRING
+_normal_string_literal: STRING
+_char_literal: CHAR
+
+_numerical_literal: BINARY | HEX | OCT | INTEGER | DECIMAL
+
+_boolean_literal: "true" | "false"
+
+_void_literal: "void"
+
+_nullptr_literal: "nullptr"
+
+_ternary_expr: value "?" value ":" value
 
 
+_var_declare: TYPE PATH "=" value
+_var_assign: PATH OP value
+
+_func_decl: "func" PATH generic_lst? params_decl_lst member_init? return_t? body
+_func_call: PATH generic_lst? params_call_lst

@@ -7,8 +7,6 @@ from typing import List, Optional, Union, Tuple, Any, Dict, Set
 from typing import Literal as tLiteral
 
 
-from numpy import generic, var
-
 # ==============================================
 # Global Types
 # ==============================================
@@ -255,11 +253,6 @@ class Annotation(ASTNode):
 # Base class for all modifiers (private, static, etc.)
 class Modifier(ASTNode):
     """Base class for all `@` modifiers"""
-    pass
-
-# Base class for all condition types (comparisons, boolean operations, etc.)
-class Condition(Value, ASTNode):
-    """Base class for all condition types"""
     pass
 
 # Base class for all expression types (binary, unary, etc.)
@@ -655,7 +648,7 @@ class NumericLiteral(Literal):
         return self.rawValue.replace('_', '')
 
 # `{1, 0.6, 0xDEADBEEF}`
-class ItemContainerLiteral(Literal):
+class VectorLiteral(Literal):
     """Base class for list/set/tuple literals using uniform {} syntax"""
     def __init__(self, items: List[ASTNode], delims : str = "{}"):
         assert delims in ["()", "{}"], f"Unknown demlimiter {delims}"
@@ -668,7 +661,7 @@ class ItemContainerLiteral(Literal):
         return f"{self.delims[0]}{items_str}{self.delims[1]}"
 
 # `{{"Renz", 1}, {"Henry Lee Hu", 2}}`
-class KVContainerLiteral(Literal):
+class MapLiteral(Literal):
     """Base class for map literals using {{key, value}} syntax"""
     def __init__(self, pairs: List[Tuple[ASTNode, ASTNode]]):
         super().__init__(NodeType.MAPLiteral)  # We'll reuse this node type
@@ -864,7 +857,6 @@ class FunctionCall(Value, ASTNode):
         
         return f"{self.target.To_CXX()}{self._template()}({', '.join(args)})"
 
-# New: simple member-initializer node for constructor initializer lists
 class MemberInit(ASTNode):
     """Represents a member initializer entry like 'x(x)'"""
     def __init__(self, name: Union[str, Identifier], expr: Union[ASTNode, str]):
@@ -1191,5 +1183,4 @@ def main() -> int:
     return 0
 
 if __name__ == "__main__":
-    import sys
-    sys.exit(main())
+    main()

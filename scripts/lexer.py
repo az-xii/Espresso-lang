@@ -1,22 +1,17 @@
 #! venv/bin/python3
 from __future__ import annotations
-from calendar import c
 import re
 import json
 import sys
 import os.path
-import argparse
-import textwrap
 from typing import Tuple, Dict, Iterable, List
 from lark import Lark, UnexpectedInput
 from dataclasses import dataclass
 
-__all__ = ["Lexer", "Token"]
-
 SAMPLE = r"""
-func main() -> int {
-    runtime::Output("Hello, World")
-}
+int x = 42;
+string s = "Hello, World!";
+int y = x + 5;
 """
 # -------------------- Preprocessor for balanced @cpp { ... } blocks --------------------
 def extract_cpp_blocks(source: str, marker: str = "@cpp") -> Tuple[str, Dict[str, str]]:
@@ -155,15 +150,27 @@ def clean_block(block: str) -> str:
 
     return "\n".join(new_lines).rstrip()
 
+# -------------------- Preprocessor for splitting tokens --------------------
+def split_tokens(tokens: List[Token]) -> List[Tuple[Token]]:
+    """Split tokens at line breaks, returning a list of lines with their tokens."""
+    lines: List[List[Token]] = []
+    line_count = max(t.line for t in tokens) if tokens else 0
+
+    if line_count == 0:
+        return []
+    
+    for i in range(1, line_count + 1):
+        line_tokens = [t for t in tokens if t.line == i]
+        lines.append(line_tokens)
+    return lines
+
 # -------------------- Grammar --------------------
 GRAMMAR = r"""
 start: (CPP_BLOCK | LITERAL | COMMENTS | DECOR | TYPE | KEYW | OP | PATH | DELIM | ANGLE_PATH)*
 
 CPP_BLOCK.10: /__CPP_BLOCK_\d+__/
 
-LITERAL: LINE_COMMENT
-       | C_BLOCK_COMMENT  
-       | RAW_STRING
+LITERAL: RAW_STRING
        | INTERP_STRING
        | STRING
        | CHAR
@@ -193,7 +200,7 @@ INTEGER: /\d[\d_]*/
 BOOLEAN: "true" | "false"
 
 DECOR: "@include" | "@using" | "@alias" | "@namespace" | "@assert" 
-     | "@define" | "@panic" | "@cpp" | "@operator" | "@cast"
+     | "@define" | "@panic" | "@cpp" | "@operator" | "@cast" | "@usingns"
 
 TYPE.10: "byte" | "short" | "int" | "long" | "ubyte" | "ushort" | "ulong"
     | "float" | "double" | "fixed16_16" | "fixed32_32" | "char" | "string"
@@ -203,7 +210,7 @@ TYPE.10: "byte" | "short" | "int" | "long" | "ubyte" | "ushort" | "ulong"
 KEYW.10: "func" | "class" | "this" | "super" | "private" | "public" | "protected"
     | "const" | "consteval" | "constexpr" | "static" | "override" | "virtual"
     | "if" | "elif" | "else" | "switch" | "case" | "while" | "for" | "in"
-    | "break" | "continue" | "try" | "catch" | "throw" | "main" | "return" | "main"
+    | "break" | "continue" | "try" | "catch" | "throw" | "main:" | "return"
 
 OP: OP_MULTI | OP_SINGLE
 OP_MULTI: "::" | "->" | "=>" | "++" | "--" | "+=" | "-=" | "*=" | "/="
@@ -226,7 +233,6 @@ ANGLE_PATH: /<[^>\n]+>/
 
 def build_parser() -> Lark:
     return Lark(GRAMMAR, start='start', parser='lalr', lexer='contextual', propagate_positions=True)
-
 
 
 # -------------------- Token class --------------------
@@ -329,44 +335,24 @@ class Lexer:
 
 # -------------------- CLI --------------------
 def main(argv: Iterable[str] = None):
-    ap = argparse.ArgumentParser(description="Tokenize an AZ source file using Lark.")
-    ap.add_argument("file", nargs="?", help="Source file path. If omitted uses embedded sample.")
-    ap.add_argument("--json", action="store_true", help="Emit JSON list of tokens.")
-    ap.add_argument("--encoding", default="utf-8", help="File encoding (default: utf-8).")
-    ap.add_argument("--max", type=int, default=120, help="Max length of printed token.value (when not using --json).")
-    ap.add_argument("--no-comments", action="store_true", help="Remove comment tokens from output.")
-    args = ap.parse_args(list(argv) if argv is not None else None)
 
-    if args.file:
-        if not os.path.exists(args.file):
-            print(f"Error: Source file not found: {args.file}", file=sys.stderr)
-            sys.exit(1)
-        if not os.path.isfile(args.file):
-            print(f"Error: Expected a file, but got a directory: {args.file}", file=sys.stderr)
-            sys.exit(1)
-        encoding = args.encoding if args.encoding else "utf-8"
-        text = open(args.file, "r", encoding=encoding).read()
-    else:
-        text = SAMPLE
+    text = SAMPLE
 
     try:
-        tokens, blocks = Lexer.lex_source(text, include_comments=not args.no_comments)
+        tokens, blocks = Lexer.lex_source(text)
     except RuntimeError as e:
         print("Error during lexing:", e, file=sys.stderr)
         sys.exit(2)
-
-    if args.json:
-        print(json.dumps((tokens, blocks), indent=2, ensure_ascii=False))
-        return
     
-    print("Tokens:")
-    for t in tokens:
-        print(t.as_tuple())
+    lines = split_tokens(tokens)
+    print(f"Tokens -- {len(lines)} line(s):")
+    for i, line in enumerate(lines, start=1):
+        print(f"   {i} | ", end="")
+        print(" ".join(f"{t.type}('{t.val}')" for t in line))
 
     print("\nC++ Blocks:")
     for i, b in enumerate(blocks):
         print(f"[{i}]\n{b}")
-
 
 if __name__ == "__main__":
     main()
