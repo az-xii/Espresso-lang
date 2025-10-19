@@ -42,7 +42,10 @@ class NodeType(Enum):
     ABSTRACTModifier = "ABSTRACTModifier"
     OVERRIDEModifier = "OVERRIDEModifier"
     VIRTUALModifier = "VIRTUALModifier"
+    POINTERModifier = "POINTERModifier"
+    REFERENCEModifier = "REFERENCEModifier"
 
+    VAR_DECLARE_ASSIGN = "VAR_DECLARE_ASSIGN"
     VAR_DECLARE = "VAR_DECLARE"
     VAR_ASSIGN = "VAR_ASSIGN"
     MULTI_VAR_DECLARE = "MULTI_VAR_DECLARE"
@@ -184,11 +187,11 @@ def ConvertType(espresso_type: str) -> str:
             word = ''
 
     for c in s:
-        if c == '[':
+        if c == '<':
             dump_word()
             out.append('<')
             stack.append('[')
-        elif c == ']':
+        elif c == '>':
             dump_word()
             out.append('>')
             if not stack or stack.pop() != '[':
@@ -345,7 +348,7 @@ class Program():
 
     def add_include(self, include: str) -> None:
         """Add an include directive to the program."""
-        self.includes.add(include)
+        self.includes.append(include)
 
     def To_CXX(self) -> str:
         includes_str = '\n'.join(self.includes)
@@ -426,12 +429,13 @@ class IsVirtualModifier(Modifier):
     def __init__(self):
         super().__init__(NodeType.VIRTUALModifier)
 
-
 MOD_MAP: Dict = {
     IsPrivateModifier: "private",
     IsPublicModifier: "public",
     IsProtectedModifier: "protected",
     IsConstModifier: "const",
+    IsConstexprModifier: "constexpr",
+    IsConstevalModifier: "consteval",
     IsStaticModifier: "static",
     IsAbstractModifier: "abstract",
     IsOverrideModifier: "override",
@@ -574,42 +578,29 @@ class UnaryIncrementExpression(Expression):
         else:
             return f"{self.operand.To_CXX()}{self.op}".strip()
 
-class VarDeclare(ASTNode):
+class VarDeclareAssign(ASTNode):
     def __init__(self, 
                  var_name: Identifier,
-                 var_type: Identifier,
-                 modifiers: List[Modifier] = []):
-        super().__init__(NodeType.VAR_DECLARE, modifiers=modifiers)
+                 var_type: Optional[Identifier] = None,
+                 modifiers: Optional[List[Modifier]] = [],
+                 value: Optional[Value] = None,
+                 colon: bool = True):
+        super().__init__(NodeType.VAR_DECLARE_ASSIGN, modifiers=modifiers)
         self.var_name = var_name
         self.var_type = var_type
-
-    def To_CXX(self) -> str:
-        parts = []
-        if self.modifiers:
-            parts.append(' '.join(m.To_CXX() for m in self.modifiers))
-        parts.append(ConvertType(self.var_type.To_CXX()).strip())
-        parts.append(self.var_name.To_CXX())
-        return ' '.join(parts) + ';'
-
-class VarAssign(ASTNode):
-    def __init__(self, 
-                 var_name: Identifier,
-                 value: Value,
-                 var_type: Identifier,
-                 modifiers: List[Modifier] = []):
-        super().__init__(NodeType.VAR_ASSIGN, modifiers=modifiers)
-        self.var_name = var_name
         self.value = value
-        self.var_type = var_type
+        self.modifiers = modifiers or []
+        self.colon = colon
 
     def To_CXX(self) -> str:
         parts = []
         if self.modifiers:
-            parts.append(' '.join(m.To_CXX() for m in self.modifiers))
+            parts.append(' '.join(ConvertModifier(m) for m in self.modifiers))
         parts.append(ConvertType(self.var_type.To_CXX()).strip())
         parts.append(self.var_name.To_CXX())
-        parts.append(f"= {self.value.To_CXX()}")
-        return ' '.join(parts) + ';'
+        if self.value:
+            parts.append(f"= {self.value.To_CXX()}")
+        return ' '.join(parts) + (';' if self.colon else '')
 
 class MultiVarDeclare(ASTNode):
     def __init__(self,
@@ -902,7 +893,7 @@ class FunctionDecl(ASTNode):
 
     def To_CXX(self) -> str:
         param_list = ', '.join(p.To_CXX() for p in self.params)
-        mods = ' '.join(ConvertModifier(m) for m in self.modifiers) if self.modifiers else ""
+        mods = ' '.join(ConvertModifier(m) for m in self.modifiers) + " " if self.modifiers else ""
         body = self.body.To_CXX()
         return_type = ConvertType(self.return_type.To_CXX()) or ""
         generic_str = ''
@@ -1053,7 +1044,7 @@ class IfExpr(ASTNode):
                 body_cxx = Body(body if isinstance(body, list) else body.children, 1).To_CXX()
             result += f" else if ({cond.To_CXX()}) {{\n{body_cxx}\n}}"
             
-        if self.else_body:
+        if self.else_body and (self.else_body.children):
             result += f" else {{\n{self.else_body.To_CXX()}\n}}"
             
         return result
@@ -1126,7 +1117,7 @@ class CStyleForLoop(ASTNode):
         self.update = update
 
     def To_CXX(self) -> str:
-        return (f"for ({self.init.To_CXX()}; {self.condition.To_CXX()}; {self.update.To_CXX()}) "
+        return (f"for ({self.init.To_CXX()} {self.condition.To_CXX()}; {self.update.To_CXX()}) "
                 f"{{\n{self.body.To_CXX()}\n}}")
 
 class Break(ASTNode):
@@ -1179,24 +1170,8 @@ class Throw(ASTNode):
         return f"throw {self.exception.To_CXX()};"
 
 def main() -> int:
-    test_interpolation = InterpolatedStringLiteral(r'$"Hello, {name}! Today is {day_of_week}."')
-    print(test_interpolation.To_CXX())
-
-    class_constructor = FunctionDecl(
-        name=Identifier("MyClass"),
-        generic_params=[GenericParam(Identifier("T"))],
-        params=[
-            FuncDeclParam(param_type="int", default=NumericLiteral("42"), name=Identifier("value")),
-            FuncDeclParam(param_type="string", default=NormalStringLiteral("example"), name=Identifier("name"))
-        ],
-        # use MemberInit for initializer list entries
-        var_assigns=[
-            MemberInit("value", Identifier("value")),
-            MemberInit("name", Identifier("name"))
-        ],
-        body=Body([])
-    )
-    print(class_constructor.To_CXX())
+    test = Identifier("myVar**")
+    print(test.To_CXX())
     return 0
 
 if __name__ == "__main__":

@@ -9,7 +9,7 @@ from lark import Lark, UnexpectedInput
 from dataclasses import dataclass
 
 SAMPLE = r"""
-func linearSearch<T>(const list<T>& nums, const T& target> -> union<int, string> {
+func linearSearch<T>(const list<T> nums&, const T target&) -> union<int, string> {
     for (int i = 0; i < nums.size(); ++i) {
         if (nums[i] == target) { return i; }
     }
@@ -223,8 +223,7 @@ OP_SINGLE: /[+\-*\/%=<>!&|^~]/
 
 # PATH: identifiers that may include ::, ., -> separators and simple [index] parts.
 # Note: this is intended to cover common path forms like `runtime::Output`, `obj.field`, `ptr->field`, `mydict[key]`.
-PATH: /[A-Za-z_][A-Za-z0-9_]*(?:(?:(?:::)|->|\.)[A-Za-z_][A-Za-z0-9_]*)*(?:\[[^\]\n]+\])*/
-
+PATH: /[A-Za-z_][A-Za-z0-9_]*(?:(?:(?:::)|->|\.)[A-Za-z_][A-Za-z0-9_]*)*/
 DELIM: "(" | ")" | "[" | "]" | "{" | "}" | "," | ";" | ":" | "?" | "." 
 
 ANGLE_PATH: /<[^>\n]+>/
@@ -239,7 +238,7 @@ def build_parser() -> Lark:
 
 
 # -------------------- Token class --------------------
-@dataclass(frozen=True)
+@dataclass
 class Token:
     type: str
     line: int
@@ -335,6 +334,18 @@ class Lexer:
         with open(file_path, "r", encoding="utf-8") as f:
             source = f.read()
         return Lexer.lex_source(source, include_comments)
+    
+    @staticmethod
+    def print_tokens(tokens: List[Token], blocks: List[str]) -> None:
+        lines = split_tokens(tokens)
+        print(f"Tokens -- {len(lines)} line(s):")
+        for i, line in enumerate(lines, start=1):
+            print(f"   {i} | ", end="")
+            print(" ".join(f"{t.type}('{t.val}')" for t in line))
+
+        print("\nC++ Blocks:")
+        for i, b in enumerate(blocks):
+            print(f"[{i}]\n{b}")
 
 # -------------------- CLI --------------------
 def main(argv: Iterable[str] = None):
@@ -343,21 +354,12 @@ def main(argv: Iterable[str] = None):
 
     try:
         tokens, blocks = Lexer.lex_source(text)
-        print(tokens)
-        print(blocks)
+        Lexer.print_tokens(tokens, blocks)
     except RuntimeError as e:
         print("Error during lexing:", e, file=sys.stderr)
         sys.exit(2)
     
-    lines = split_tokens(tokens)
-    print(f"Tokens -- {len(lines)} line(s):")
-    for i, line in enumerate(lines, start=1):
-        print(f"   {i} | ", end="")
-        print(" ".join(f"{t.type}('{t.val}')" for t in line))
 
-    print("\nC++ Blocks:")
-    for i, b in enumerate(blocks):
-        print(f"[{i}]\n{b}")
 
 if __name__ == "__main__":
     main()

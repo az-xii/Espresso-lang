@@ -211,14 +211,7 @@ class Parser:
             next_tok = self.peek()
             if next_tok and next_tok.val == "(":
                 return self.parse_function_call(ident)
-            elif next_tok and next_tok.val == "[":
-                # Array access
-                while next_tok and next_tok.val == "[":
-                    self.advance()  # Skip '['
-                    index_expr = self.parse_expression()
-                    self.expect("]")
-                    ident = Identifier(ident.value + "[" + index_expr.value + "]")
-                    next_tok = self.peek()
+            
             return ident
         
         raise SyntaxError(f"Unexpected token in expression: {tok}")
@@ -399,55 +392,20 @@ class Parser:
         return FunctionCall(target, params, generic_params)
     
     def parse_var_declare(self, mods: List[Modifier] = []) -> VarDeclareAssign:
-        """Parse variable declaration: [&*] type [&*] name [&*] [= value]"""
+        """Parse variable declaration: type name [= value]"""
         modifiers = mods.copy()
         self.modifiers = []  # Clear current modifiers after use
-        
-        # Collect leading & or * (e.g., &int, *char)
-        mem_ops = ""
-        while self.peek() and self.peek().val in ("*", "&"):  # Fixed: added ()
-            mem_ops += self.peek().val
-            self.advance()
-        
-        # Parse base type
         var_type = self.parse_type()
-        type_str = mem_ops + var_type.value
-        
-        # Collect trailing & or * after type (e.g., int&, char*)
-        while self.peek() and self.peek().val in ("*", "&"):
-            type_str += self.peek().val
-            self.advance()
-        
-        var_type = Identifier(type_str)
-        
-        # Parse variable name
         var_name = self.parse_identifier()
-        name_str = var_name.value
-        
-        # Collect trailing & or * after name (though this is less common)
-        while self.peek() and self.peek().val in ("*", "&"):
-            name_str += self.peek().val
-            self.advance()
-        
-        var_name = Identifier(name_str)
         
         # Check for assignment
         if self.peek() and self.peek().val == "=":
             self.advance()
             value = self.parse_expression()
-            return VarDeclareAssign(
-                var_name=var_name, 
-                value=value, 
-                var_type=var_type, 
-                modifiers=modifiers
-            )
+            return VarDeclareAssign(var_name=var_name, value=value, var_type=var_type, modifiers=modifiers)
         
-        return VarDeclareAssign(
-            var_name=var_name, 
-            var_type=var_type, 
-            modifiers=modifiers
-        )
-
+        return VarDeclareAssign(var_name=var_name, var_type=var_type, modifiers=modifiers)
+    
     def parse_return(self) -> Return:
         """Parse return statement"""
         self.expect("return")
@@ -563,9 +521,8 @@ class Parser:
         """Parse function declaration"""
         self.expect("func")
         modifiers = mods.copy()
-        self.modifiers = []
-        
-        # Parse name with generics
+        self.modifiers = []  # Clear current modifiers after use
+        # Parse name (may include generics like "linearSearch<T>" or just "linearSearch")
         name_tok = self.peek()
         if not name_tok or name_tok.type not in ("TYPE", "PATH"):
             raise self.error(f"Expected function name")
@@ -585,14 +542,15 @@ class Parser:
         else:
             name = Identifier(full_name)
         
-        # Parse parameters using parse_var_declare!
+        # Parse parameters
         param_groups = self.match_delimited("(", ")")
         params = []
         
         for group in param_groups:
             if not group:
                 continue
-            
+                
+            # Parse parameter: [const] type [&] name [= default]
             # Save current state
             saved_tokens = self.tokens
             saved_pos = self.current_token
@@ -602,15 +560,25 @@ class Parser:
             self.current_token = 0
             
             try:
-                # Parse as a variable declaration (handles const, type, &, *, name, default)
-                param = self.parse_statement()
+                # Skip 'const' if present
+                if self.peek() and self.peek().val == "const":
+                    self.advance()
+                \
+                param_type = self.parse_type()
                 
-                # Should be a VarDeclareAssign
-                if isinstance(param, VarDeclareAssign):
-                    param.colon = False
-                    params.append(param)
-                else:
-                    raise self.error(f"Expected variable declaration in parameter")
+                # Skip '&' if present
+                if self.peek() and self.peek().val == "&":
+                    self.advance()
+                
+                param_name = self.parse_identifier()
+                
+                # Check for default value
+                default = None
+                if self.peek() and self.peek().val == "=":
+                    self.advance()
+                    default = self.parse_expression()
+                
+                params.append(FuncDeclParam(param_name, param_type, default))
             finally:
                 # Restore state
                 self.tokens = saved_tokens
@@ -626,84 +594,7 @@ class Parser:
         body = self.parse_block()
         
         return FunctionDecl(name, params, return_type, generic_params, body, modifiers)
- 
-    def parse_switch_statement(self) -> Switch:
-        """Parse switch statement"""
-        self.expect("switch")
-        self.expect("(")
-        subject = self.parse_expression()
-        self.expect(")")
-        self.expect("{")
-        
-        cases = []
-        
-        while self.peek() and self.peek().val != "}":
-            if self.peek().val == "case":
-                self.advance()  # Skip 'case'
-                case_value = self.parse_expression()
-                self.expect(":")
-                
-                # Parse case body until we hit another case/default or closing brace
-                case_statements = []
-                while self.peek() and self.peek().val not in ("case", "default", "}"):
-                    stmt = self.parse_statement()
-                    if stmt:
-                        case_statements.append(stmt)
-                
-                cases.append(Case(case_value, Body(case_statements)))
-            
-            elif self.peek().val == "default":
-                self.advance()  # Skip 'default'
-                self.expect(":")
-                
-                # Parse default body
-                default_statements = []
-                while self.peek() and self.peek().val not in ("case", "}"):
-                    stmt = self.parse_statement()
-                    if stmt:
-                        default_statements.append(stmt)
-                
-                # Use a special identifier for default
-                cases.append(Case(Identifier("default"), Body(default_statements)))
-            else:
-                # Unexpected token
-                raise self.error(f"Expected 'case' or 'default' in switch body")
-        
-        self.expect("}")
-        return Switch(subject, Body(cases))
-
-    def parse_try_catch(self) -> TryCatch:
-        """Parse try-catch-finally statement"""
-        self.expect("try")
-        try_body = self.parse_block()
-        
-        catch_blocks = []
-        
-        # Parse catch blocks
-        while self.peek() and self.peek().val == "catch":
-            self.advance()  # Skip 'catch'
-            self.expect("(")
-            
-            # Parse exception type
-            exception_type = self.parse_type()
-            
-            # Optional exception variable name
-            if self.peek() and self.peek().type in ("PATH", "TYPE"):
-                # Has variable name like: catch (Exception e)
-                self.parse_identifier()  # Skip for now, we use 'e' by default
-            
-            self.expect(")")
-            catch_body = self.parse_block()
-            catch_blocks.append((exception_type, catch_body))
-        
-        # Parse optional finally block
-        finally_body = None
-        if self.peek() and self.peek().val == "finally":
-            self.advance()
-            finally_body = self.parse_block()
-        
-        return TryCatch(try_body, catch_blocks, finally_body)
-
+    
     def parse_statement(self) -> Optional[ASTNode]:
         """Parse a single statement"""
         tok = self.peek()
@@ -720,8 +611,6 @@ class Parser:
         if tok.type == "KEYW":
             if tok.val == "func":
                 return self.parse_function_decl(self.modifiers)
-            elif tok.val == "class":
-                return self.parse_class_decl(self.modifiers)
             elif tok.val == "return":
                 return self.parse_return()
             elif tok.val == "if":
@@ -736,31 +625,14 @@ class Parser:
             elif tok.val == "continue":
                 self.advance()
                 return Continue()
-            elif tok.val in MOD_MAP.values():
+            elif tok.val in ("const", "static", "private", "public"):
                 # Modifier followed by declaration
                 self.add_modifier(tok.val)
                 self.advance()
                 return self.parse_statement()
-            elif tok.val == "throw":
-                self.advance()
-                exception = self.parse_expression()
-                if self.peek() and self.peek().val == ";":
-                    self.advance()
-                return Throw(exception)
-            elif tok.val == "switch":
-                return self.parse_switch_statement()
-            elif tok.val == "try":
-                return self.parse_try_catch()
-            elif tok.val == "catch":
-                raise self.error("Unexpected 'catch' without preceding 'try'")
-            elif tok.val == "finally":
-                raise self.error("Unexpected 'finally' without preceding 'try'")
-            elif tok.val == "main:":
-                return self.parse_main_function(self.modifiers)
-
-                
+        
         # Type declaration
-        if tok.type in ("TYPE", "PATH"):
+        if tok.type == "TYPE":
             return self.parse_var_declare(self.modifiers)
         
         # CPP Block
@@ -774,7 +646,7 @@ class Parser:
         if self.peek() and self.peek().val == ";":
             self.advance()
         return expr
-
+    
     def parse(self) -> Program:
         """Parse the entire program"""
         statements = []
@@ -782,7 +654,8 @@ class Parser:
         while self.peek():
             stmt = self.parse_statement()
             if stmt:
-                statements.append(stmt)        
+                statements.append(stmt)
+        
         return Program(Body(statements))
 
 
@@ -805,6 +678,7 @@ static public func linearSearch<T>(const list<T>& nums, const T& target) -> int 
         for t in tokens:
             if t.type == "TYPE":
                 t.val = t.val  = ConvertType(t.val)
+        Lexer.print_tokens(tokens, cpp_blocks)
 
         parser = Parser(tokens, cpp_blocks)
         ast = parser.parse()
