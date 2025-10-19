@@ -90,12 +90,7 @@ class NodeType(Enum):
 
 # ==, <=, >=, !=, >, < operators
 ConditionOperators: Set = {
-    "==",   # Equal
-    "<=",   # Less or Equal
-    ">=",   # More or Equal
-    "!=",   # Not Equal
-    ">",    # Greater
-    "<"     # Less
+
 }
 
 # Binary operators for arithmetic and bitwise operations
@@ -121,7 +116,13 @@ BinaryOperators: Set = {
     "|=",  # Bitwise OR Assignment
     "^=",  # Bitwise XOR Assignment
     "<<=", # Left Shift Assignment
-    ">>="  # Right Shift Assignment
+    ">>=", # Right Shift Assignment
+    "==",   # Equal
+    "<=",   # Less or Equal
+    ">=",   # More or Equal
+    "!=",   # Not Equal
+    ">",    # Greater
+    "<"     # Less
 }
 
 UnaryOperators: Set = {
@@ -340,14 +341,15 @@ class CPPBlock(ASTNode):
 class Program():
     def __init__(self, body: Body):
         self.body = body if isinstance(body, Body) else Body([])
-        self.includes: Set[str] = set("#include <runtime.hpp>")
+        self.includes: List[str] = [r'#include "runtime2.hpp"']
 
     def add_include(self, include: str) -> None:
         """Add an include directive to the program."""
         self.includes.add(include)
 
     def To_CXX(self) -> str:
-        includes_str = '\n'.join(sorted(self.includes))
+        includes_str = '\n'.join(self.includes)
+        self.body.indent_level = 0
         body_str = self.body.To_CXX()
         return f"{includes_str}\n\n{body_str}"
 
@@ -557,6 +559,20 @@ class UnaryExpression(Expression):
         # Handle special case for 'not' which we map to '!'
         op = '!' if self.op == 'not' else self.op
         return f"{op}{self.operand.To_CXX()}".strip()
+
+class UnaryIncrementExpression(Expression):
+    """Represents unary increment/decrement operations (++, --)"""
+    def __init__(self, op: str, operand: ASTNode, is_prefix: bool = True):
+        super().__init__(NodeType.EXPRESSION_UNARY)
+        self.op = op
+        self.operand = operand
+        self.is_prefix = is_prefix
+
+    def To_CXX(self) -> str:
+        if self.is_prefix:
+            return f"{self.op}{self.operand.To_CXX()}".strip()
+        else:
+            return f"{self.operand.To_CXX()}{self.op}".strip()
 
 class VarDeclare(ASTNode):
     def __init__(self, 
@@ -1075,6 +1091,7 @@ class Switch(ASTNode):
         subj = self.value.To_CXX() if hasattr(self, "value") and self.value is not None else ""
         body_cxx = self.body.To_CXX() if hasattr(self, "body") and self.body is not None else ""
         return f"switch({subj}) {{\n{body_cxx}\n}}"
+
 # ==============================================
 # Loops
 # ==============================================

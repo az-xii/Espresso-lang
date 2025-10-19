@@ -9,9 +9,12 @@ from lark import Lark, UnexpectedInput
 from dataclasses import dataclass
 
 SAMPLE = r"""
-int x = 42;
-string s = "Hello, World!";
-int y = x + 5;
+func linearSearch<T>(const list<T>& nums, const T& target> -> union<int, string> {
+    for (int i = 0; i < nums.size(); ++i) {
+        if (nums[i] == target) { return i; }
+    }
+    return "Not in iterable!"
+}
 """
 # -------------------- Preprocessor for balanced @cpp { ... } blocks --------------------
 def extract_cpp_blocks(source: str, marker: str = "@cpp") -> Tuple[str, Dict[str, str]]:
@@ -340,6 +343,8 @@ def main(argv: Iterable[str] = None):
 
     try:
         tokens, blocks = Lexer.lex_source(text)
+        print(tokens)
+        print(blocks)
     except RuntimeError as e:
         print("Error during lexing:", e, file=sys.stderr)
         sys.exit(2)

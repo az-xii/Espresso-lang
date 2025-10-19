@@ -1,320 +1,731 @@
-from typing import Tuple, Dict
+#!/usr/bin/env python3
+"""
+Pattern-based parser for the Espresso language.
+Converts tokens from lexer.py into AST nodes from ASTLib.py.
+"""
+
+from typing import List, Optional, Tuple, Union, Any, Dict, Callable
+from dataclasses import dataclass
+from lexer import Token, Lexer, split_tokens
+from ASTLib import *
 import re
 
 
+# ===================================
+# Pattern Matching Infrastructure
+# ===================================
 
-GRAMMAR = r"""
-start: (statement | NEWLINE)*
+@dataclass
+class PatternMatcher:
+    """Base class for pattern matchers"""
+    pass
 
-statement: var_declare
-         | var_assign
-         | multi_var_declare
-         | multi_var_assign
-         | function_decl
-         | main_function
-         | function_call
-         | class_def
-         | if_expr
-         | while_loop
-         | for_in_loop
-         | c_style_for_loop
-         | return_stmt
-         | break_stmt
-         | continue_stmt
-         | try_catch
-         | throw_stmt
-         | annotation
-         | comment
-         | cpp_block
-         | expression ";"
 
-expression: comparison
-          | binary_expr
-          | unary_expr
-          | literal
-          | identifier
-          | function_call
-          | ternary_expr
-          | lambda_expr
-
-comparison: binary_expr (COMP_OP binary_expr)*
-binary_expr: unary_expr (BIN_OP unary_expr)*
-unary_expr: (UNARY_OP)* atom
-atom: literal
-    | identifier
-    | function_call
-    | "(" expression ")"
-    | "[" [expression ("," expression)*] "]" -> list_literal
-    | "{{" [kv_pair ("," kv_pair)*] "}}" -> map_literal
-
-kv_pair: expression ":" expression
+@dataclass
+class LiteralPattern(PatternMatcher):
+    """Matches exact token value"""
+    value: str
     
-literal: NUMBER -> numeric_literal
-       | STRING -> string_literal
-       | RAW_STRING -> raw_string_literal
-       | INTERP_STRING -> interpolated_string_literal
-       | BOOLEAN -> bool_literal
-       | "nullptr" -> null_ptr_literal
-       | "void" -> void_literal
-
-identifier: ID
-
-// C++ style variable declarations: int x = 42;
-var_declare: [modifier+] TYPE ID ["=" expression] [";"] 
-var_assign: ID "=" expression ";"
-multi_var_declare: [modifier+] TYPE ID ("," ID)* ";"
-multi_var_assign: ID ("," ID)* "=" expression ";"
-
-// Traditional function declaration
-function_decl: [modifier+] "func" ID [generic_params] "(" [func_param ("," func_param)*] ")" ["->" TYPE] [":" member_init ("," member_init)*] "{" statement* "}"
-
-// Special main function syntax: main: { ... }
-main_function: "main" ":" "{" statement* "}"
-
-function_call: ID [generic_args] "(" [func_call_param ("," func_call_param)*] ")"
-
-func_param: ID ":" TYPE ["=" expression]
-func_call_param: [ID "="] expression
-generic_params: "<" generic_param ("," generic_param)* ">"
-generic_param: ID [":" TYPE] ["=" expression]
-generic_args: "<" TYPE ("," TYPE)* ">"
-member_init: ID "(" expression ")"
-
-class_def: [modifier+] "class" ID [generic_params] [":" inheritance] "{" class_member* "}"
-class_member: access_specifier ":" statement*
-           | statement
-inheritance: TYPE ("," TYPE)*
-access_specifier: "public" | "private" | "protected"
+    def match(self, token: Token) -> bool:
+        return token.val == self.value
 
 
-if_expr: "if" expression "{" statement* "}" ["elif" expression "{" statement* "}"]* ["else" "{" statement* "}"]
-ternary_expr: expression "?" expression ":" expression
-
-while_loop: "while" expression "{" statement* "}"
-for_in_loop: "for" ID "in" expression "{" statement* "}"
-c_style_for_loop: "for" "(" var_declare expression ";" expression ")" "{" statement* "}"
-
-return_stmt: "return" [expression] ";"
-break_stmt: "break" ";"
-continue_stmt: "continue" ";"
-
-try_catch: "try" "{" statement* "}" "catch" "(" TYPE ID ")" "{" statement* "}" ["finally" "{" statement* "}"]
-throw_stmt: "throw" expression ";"
-
-lambda_expr: "[" [capture] "]" "(" [func_param ("," func_param)*] ")" ["->" TYPE] "{" statement* "}"
-capture: "=" | "&" | ID ("," ID)*
-
-annotation: "@define" ID "=" expression
-          | "@assert" expression
-          | "@io"
-          | "@safe"
-          | "@unsafe"
-          | "@panic" expression
-          | "@namespace" ID "{" statement* "}"
-
-modifier: "private"     -> private_modifier
-        | "public"      -> public_modifier
-        | "protected"   -> protected_modifier
-        | "const"       -> const_modifier
-        | "constexpr"   -> constexpr_modifier
-        | "consteval"   -> consteval_modifier
-        | "static"      -> static_modifier
-        | "abstract"    -> abstract_modifier
-        | "override"    -> override_modifier
-        | "virtual"     -> virtual_modifier
-
-comment: LINE_COMMENT | BLOCK_COMMENT
-cpp_block: CPP_BLOCK
-
-COMP_OP: "==" | "!=" | "<" | ">" | "<=" | ">="
-BIN_OP: "+" | "-" | "*" | "/" | "%" | "&" | "|" | "^" | "<<" | ">>" | "&&" | "||"
-       | "+=" | "-=" | "*=" | "/=" | "%=" | "&=" | "|=" | "^=" | "<<=" | ">>="
-UNARY_OP: "!" | "-" | "+" | "~"
-
-TYPE: /[A-Za-z_][A-Za-z0-9_<>,\s]*/  // Handles complex types like list<int>, Map<string, int>
-ID: /[A-Za-z_][A-Za-z0-9_]*/
-NUMBER: /[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?/
-STRING: /"([^"\\]|\\.)*"/
-RAW_STRING: /R"([^"\\]|\\.)*"/
-INTERP_STRING: /\$"([^"\\]|\\.)*"/
-BOOLEAN: "true" | "false"
-LINE_COMMENT: /\/\/[^\n]*/
-BLOCK_COMMENT: /\/\*.*?\*\//
-CPP_BLOCK: /__CPP_BLOCK_\d+__/
-
-NEWLINE: /\n+/
-%ignore " "
-%ignore "\t"
-"""
-
-TEST = r"""
-func linearSearch<T>(const list<T>& arr, const T& target> -> union<int, string> {
-    for (int i = 0; i < arr.size(); ++i) {
-        if (arr[i] == target) { return i; }
-    }
-    return "Not in iterable!"
-}
+@dataclass
+class TypePattern(PatternMatcher):
+    """Matches token type"""
+    token_type: str
+    capture_name: Optional[str] = None
+    
+    def match(self, token: Token) -> bool:
+        return token.type == self.token_type
 
 
-// Main access
-main:
-    list<int> my_list = [1, 3, 99, 41, 42, 24, 11, 67, 69, 360]
-    @cpp { std::cout << "41 is at index" << linearSearch(my_list, 41) << std::endl; }
-    @cpp { std::cout << "100 is at index" << linearSearch(my_list, 100) << std::endl; }
-"""
+@dataclass
+class OneOfPattern(PatternMatcher):
+    """Matches one of several options"""
+    options: List[Union[str, PatternMatcher]]
+    capture_name: Optional[str] = None
+    
+    def match(self, token: Token) -> bool:
+        for opt in self.options:
+            if isinstance(opt, str):
+                if token.val == opt:
+                    return True
+            elif isinstance(opt, PatternMatcher):
+                if opt.match(token):
+                    return True
+        return False
 
-# -------------------- Preprocessor for balanced @cpp { ... } blocks --------------------
-def extract_cpp_blocks(source: str, marker: str = "@cpp") -> Tuple[str, Dict[str, str]]:
-    """Replace each @cpp { ... } balanced block with a placeholder: __CPP_BLOCK_n__"""
-    out_parts = []
-    i = 0
-    n = len(source)
-    mapping: Dict[str, str] = {}
-    placeholder_index = 0
 
-    while i < n:
-        m = re.search(re.escape(marker) + r'\b', source[i:])
-        if not m:
-            out_parts.append(source[i:])
-            break
-        start = i + m.start()
-        out_parts.append(source[i:start])
-        j = start + len(m.group(0))
+@dataclass
+class OptionalPattern(PatternMatcher):
+    """Optionally matches a pattern"""
+    pattern: Union[str, PatternMatcher]
+    capture_name: Optional[str] = None
 
-        while j < n and source[j].isspace():
-            j += 1
 
-        if j >= n or source[j] != '{':
-            out_parts.append(source[start:start+len(m.group(0))])
-            i = start + len(m.group(0))
-            continue
+@dataclass
+class RepeatPattern(PatternMatcher):
+    """Matches pattern 0 or more times"""
+    pattern: Union[str, PatternMatcher]
+    capture_name: Optional[str] = None
 
-        k = j
-        depth = 0
-        in_string = False
-        string_delim = ''
-        in_char = False
-        escaped = False
-        in_line_comment = False
-        in_block_comment = False
 
-        while k < n:
-            ch = source[k]
-            nxt = source[k+1] if k+1 < n else ''
-            if in_line_comment:
-                if ch == '\n':
-                    in_line_comment = False
-            elif in_block_comment:
-                if ch == '*' and nxt == '/':
-                    in_block_comment = False
-                    k += 1
-            elif in_string:
-                if escaped:
-                    escaped = False
-                elif ch == '\\':
-                    escaped = True
-                elif ch == string_delim:
-                    in_string = False
-            elif in_char:
-                if escaped:
-                    escaped = False
-                elif ch == '\\':
-                    escaped = True
-                elif ch == "'":
-                    in_char = False
+@dataclass
+class SequencePattern(PatternMatcher):
+    """Matches a sequence of patterns"""
+    patterns: List[Union[str, PatternMatcher]]
+
+
+# ===================================
+# Parser Class
+# ===================================
+
+class Parser:
+    def __init__(self, tokens: List[Token], cpp_blocks: List[str]):
+        self.tokens = tokens
+        self.cpp_blocks = cpp_blocks
+        self.lines = split_tokens(tokens)
+        self.current_line = 0
+        self.current_token = 0
+    
+    def error(self, message: str) -> SyntaxError:
+        """Create a detailed syntax error with context"""
+        tok = self.peek()
+        if not tok:
+            return SyntaxError(f"{message} at EOF")
+        
+        # Show context: previous 3 tokens, current, next 3 tokens
+        context_tokens = []
+        for i in range(-3, 4):
+            ctx_tok = self.peek(i)
+            if ctx_tok:
+                marker = " >>> " if i == 0 else " "
+                context_tokens.append(f"{marker}{ctx_tok.type}('{ctx_tok.val}')")
+        
+        context = "\n    ".join(context_tokens)
+        return SyntaxError(
+            f"{message}\n"
+            f"  At line {tok.line}, column {tok.col}\n"
+            f"  Context:\n    {context}"
+        )
+        
+    def peek(self, offset: int = 0) -> Optional[Token]:
+        """Peek at token with offset"""
+        idx = self.current_token + offset
+        if 0 <= idx < len(self.tokens):
+            return self.tokens[idx]
+        return None
+    
+    def advance(self, count: int = 1) -> Optional[Token]:
+        """Advance and return current token"""
+        if self.current_token < len(self.tokens):
+            tok = self.tokens[self.current_token]
+            self.current_token += count
+            return tok
+        return None
+    
+    def expect(self, value: str) -> Token:
+        """Expect specific token value"""
+        tok = self.peek()
+        if not tok or tok.val != value:
+            raise self.error(f"Expected '{value}', got '{tok.val if tok else 'EOF'}'")
+        return self.advance()
+    
+    def expect_type(self, token_type: str) -> Token:
+        """Expect specific token type"""
+        tok = self.peek()
+        if not tok or tok.type != token_type:
+            raise self.error(f"Expected token type '{token_type}', got '{tok.type if tok else 'EOF'}'")
+        return self.advance()
+    
+    # ===================================
+    # Pattern Matching Helpers
+    # ===================================
+    
+    def match_delimited(self, open_delim: str, close_delim: str, 
+                       separator: str = ",") -> List[List[Token]]:
+        """Match delimited token groups (e.g., function parameters)"""
+        self.expect(open_delim)
+        groups = []
+        current_group = []
+        depth = 1
+        
+        while depth > 0 and self.peek():
+            tok = self.peek()
+            
+            if tok.val == open_delim:
+                depth += 1
+                current_group.append(self.advance())
+            elif tok.val == close_delim:
+                depth -= 1
+                if depth == 0:
+                    if current_group:
+                        groups.append(current_group)
+                    self.advance()
+                    break
+                else:
+                    current_group.append(self.advance())
+            elif tok.val == separator and depth == 1:
+                if current_group:
+                    groups.append(current_group)
+                    current_group = []
+                self.advance()
             else:
-                if ch == '/' and nxt == '/':
-                    in_line_comment = True
-                    k += 1
-                elif ch == '/' and nxt == '*':
-                    in_block_comment = True
-                    k += 1
-                elif ch == '"':
-                    in_string = True
-                    string_delim = '"'
-                elif ch == "'":
-                    in_char = True
-                elif ch == '{':
-                    depth += 1
-                elif ch == '}':
-                    depth -= 1
-                    if depth == 0:
-                        k += 1
+                current_group.append(self.advance())
+        
+        return groups
+    
+    def parse_type(self) -> Identifier:
+        """Parse a type (handles generics like list<int>)"""
+        tok = self.peek()
+        if tok and tok.type in ("TYPE", "PATH"):
+            self.advance()
+            return Identifier(tok.val)
+        raise self.error(f"Expected type, got '{tok.type if tok else 'EOF'}'")
+    
+    def parse_identifier(self) -> Identifier:
+        """Parse an identifier (PATH tokens)"""
+        tok = self.peek()
+        if tok and tok.type in ("PATH", "TYPE"):
+            self.advance()
+            return Identifier(tok.val)
+        raise self.error(f"Expected identifier, got '{tok.type if tok else 'EOF'}'")
+    
+    # ===================================
+    # Expression Parsing
+    # ===================================
+    
+    def parse_literal(self) -> Literal:
+        """Parse a literal value"""
+        tok = self.expect_type("LITERAL")
+        val = tok.val
+        
+        # String literals
+        if val.startswith('R"'):
+            return RawStringLiteral(val[2:-1])
+        elif val.startswith('$"'):
+            return InterpolatedStringLiteral(val)
+        elif val.startswith('"'):
+            return NormalStringLiteral(val[1:-1])
+        elif val.startswith("'"):
+            return NormalStringLiteral(val[1:-1])
+        
+        # Boolean
+        elif val in ("true", "false"):
+            return BoolLiteral(val == "true")
+        
+        # Numeric
+        else:
+            return NumericLiteral(val)
+    
+    def parse_primary_expr(self) -> Value:
+        """Parse primary expression (literal, identifier, or parenthesized)"""
+        tok = self.peek()
+        
+        if not tok:
+            raise SyntaxError("Unexpected end of tokens")
+        
+        # Literals
+        if tok.type == "LITERAL":
+            return self.parse_literal()
+        
+        # Parenthesized expression
+        if tok.val == "(":
+            self.advance()
+            expr = self.parse_expression()
+            self.expect(")")
+            return expr
+        
+        # Collection literals
+        if tok.val == "{":
+            return self.parse_collection_literal()
+        
+        # Identifiers or function calls
+        if tok.type in ("PATH", "TYPE"):
+            ident = self.parse_identifier()
+            
+            # Check for function call
+            next_tok = self.peek()
+            if next_tok and next_tok.val == "(":
+                return self.parse_function_call(ident)
+            
+            return ident
+        
+        raise SyntaxError(f"Unexpected token in expression: {tok}")
+    
+    def parse_collection_literal(self) -> Literal:
+        """Parse {1, 2, 3} or {{"key", val}}"""
+        self.expect("{")
+        
+        items = []
+        is_map = False
+        
+        while self.peek() and self.peek().val != "}":
+            # Check if this is a map entry {{key, val}}
+            if self.peek().val == "{":
+                is_map = True
+                self.advance()
+                key = self.parse_expression()
+                self.expect(",")
+                val = self.parse_expression()
+                self.expect("}")
+                items.append((key, val))
+            else:
+                items.append(self.parse_expression())
+            
+            if self.peek() and self.peek().val == ",":
+                self.advance()
+        
+        self.expect("}")
+        
+        if is_map:
+            return MapLiteral(items)
+        else:
+            return VectorLiteral(items)
+    
+    def parse_unary_increment(self) -> Value:
+        """Parse unary increment/decrement expressions (++, --)"""
+        tok = self.peek()
+        
+        if tok and tok.type == "OP" and tok.val in ("++", "--"):
+            op = self.advance().val
+            operand = self.parse_unary_expr()
+            return UnaryIncrementExpression(op, operand, is_prefix=True)
+        elif tok and tok.type == "PATH":
+            # Check for postfix increment/decrement
+            saved_pos = self.current_token
+            operand = self.parse_primary_expr()
+            next_tok = self.peek()
+            if next_tok and next_tok.type == "OP" and next_tok.val in ("++", "--"):
+                op = self.advance().val
+                return UnaryIncrementExpression(op, operand, is_prefix=False)
+            else:
+                # Restore position if no postfix operator
+                self.current_token = saved_pos
+        return self.parse_primary_expr()
+
+    def parse_unary_expr(self) -> Value:
+        """Parse unary expression (!x, -x, etc.)"""
+        tok = self.peek()
+        
+        if tok and tok.type == "OP" and tok.val in UnaryOperators:
+            op = self.advance().val
+            operand = self.parse_unary_expr()
+            return UnaryExpression(op, operand)
+        elif tok and tok.type == "OP" and tok.val in ("++", "--"):
+            return self.parse_unary_increment()
+        
+        return self.parse_primary_expr()
+    
+    def parse_binary_expr(self, min_prec: int = 0) -> Value:
+        """Parse binary expression with precedence climbing"""
+        left = self.parse_unary_expr()
+        
+        while True:
+            tok = self.peek()
+            if not tok or tok.type != "OP":
+                break
+            
+            op = tok.val
+            prec = self.get_precedence(op)
+            
+            if prec < min_prec:
+                break
+            
+            self.advance()
+            right = self.parse_binary_expr(prec + 1)
+            
+            if op in ConditionOperators:
+                # For now, treat as binary (could wrap in Comparison node)
+                left = BinaryExpression(left, op, right)
+            elif op in BinaryOperators:
+                left = BinaryExpression(left, op, right)
+            else:
+                raise SyntaxError(f"Unknown operator: {op}")
+        
+        return left
+    
+    def parse_expression(self) -> Value:
+        """Parse any expression"""
+        # Check for ternary
+        expr = self.parse_binary_expr()
+        
+        # Check for ternary operator
+        if self.peek() and self.peek().val == "?":
+            self.advance()
+            true_expr = self.parse_expression()
+            self.expect(":")
+            false_expr = self.parse_expression()
+            return TernaryExpr(expr, true_expr, false_expr)
+        
+        return expr
+    
+    def get_precedence(self, op: str) -> int:
+        """Get operator precedence"""
+        precedence = {
+            "||": 1,
+            "&&": 2,
+            "|": 3,
+            "^": 4,
+            "&": 5,
+            "==": 6, "!=": 6,
+            "<": 7, "<=": 7, ">": 7, ">=": 7,
+            "<<": 8, ">>": 8,
+            "+": 9, "-": 9,
+            "*": 10, "/": 10, "%": 10,
+        }
+        return precedence.get(op, 0)
+    
+    # ===================================
+    # Statement Parsing
+    # ===================================
+    
+    def parse_function_call(self, target: Identifier = None) -> FunctionCall:
+        """Parse function call"""
+        if target is None:
+            target = self.parse_identifier()
+        
+        # Parse generic parameters if present
+        generic_params = []
+        # Note: generics are already part of the TYPE token
+        
+        # Parse parameters
+        param_groups = self.match_delimited("(", ")")
+        params = []
+        
+        for group in param_groups:
+            # Save state and parse parameter
+            saved_pos = self.current_token
+            
+            # Check for named parameter (name=value)
+            has_name = False
+            for i, tok in enumerate(group):
+                if tok.val == "=":
+                    has_name = True
+                    break
+            
+            if has_name:
+                # Named parameter
+                name = Identifier(group[0].val)
+                # Skip to after '='
+                for tok in group:
+                    if tok.val == "=":
                         break
-            k += 1
+                    self.advance()
+                self.advance()  # Skip '='
+                value = self.parse_expression()
+                params.append(FuncCallParam(value, name))
+            else:
+                # Positional parameter
+                # Temporarily set tokens to this group
+                old_tokens = self.tokens
+                self.tokens = group
+                self.current_token = 0
+                value = self.parse_expression()
+                self.tokens = old_tokens
+                self.current_token = saved_pos
+                params.append(FuncCallParam(value))
+        
+        return FunctionCall(target, params, generic_params)
+    
+    def parse_var_declare(self, modifiers: List[Modifier] = []) -> Union[VarDeclare, VarAssign]:
+        """Parse variable declaration: type name [= value]"""
+        var_type = self.parse_type()
+        var_name = self.parse_identifier()
+        
+        # Check for assignment
+        if self.peek() and self.peek().val == "=":
+            self.advance()
+            value = self.parse_expression()
+            return VarAssign(var_name, value, var_type, modifiers)
+        
+        return VarDeclare(var_name, var_type, modifiers)
+    
+    def parse_return(self) -> Return:
+        """Parse return statement"""
+        self.expect("return")
+        
+        # Check for void return
+        if self.peek() and self.peek().val == ";":
+            self.advance()
+            return Return(None)
+        
+        value = self.parse_expression()
+        if self.peek() and self.peek().val == ";":
+            self.advance()
+        
+        return Return(value)
+    
+    def parse_if_statement(self) -> IfExpr:
+        """Parse if/elif/else statement"""
+        self.expect("if")
+        self.expect("(")
+        condition = self.parse_expression()
+        self.expect(")")
+        
+        body = self.parse_block()
+        
+        elifs = []
+        else_body = None
+        
+        # Parse elif clauses
+        while self.peek() and self.peek().val == "elif":
+            self.advance()
+            self.expect("(")
+            elif_cond = self.parse_expression()
+            self.expect(")")
+            elif_body = self.parse_block()
+            elifs.append((elif_cond, elif_body))
+        
+        # Parse else clause
+        if self.peek() and self.peek().val == "else":
+            self.advance()
+            else_body = self.parse_block()
+        
+        return IfExpr(condition, body, elifs, else_body)
+    
+    def parse_while_loop(self) -> WhileLoop:
+        """Parse while loop"""
+        self.expect("while")
+        self.expect("(")
+        condition = self.parse_expression()
+        self.expect(")")
+        body = self.parse_block()
+        return WhileLoop(condition, body)
+    
+    def parse_for_loop(self) -> Union[ForInLoop, CStyleForLoop]:
+        """Parse for loop (both for-in and C-style)"""
+        self.expect("for")
+        self.expect("(")
+        
+        # Check if it's a for-in loop by looking ahead
+        saved_pos = self.current_token
+        is_for_in = False
+        
+        # Scan ahead to see if we find 'in'
+        depth = 1
+        while self.peek():
+            tok = self.peek()
+            if tok.val == "(":
+                depth += 1
+            elif tok.val == ")":
+                depth -= 1
+                if depth == 0:
+                    break
+            elif tok.val == "in" and depth == 1:
+                is_for_in = True
+                break
+            self.advance()
+        
+        # Restore position
+        self.current_token = saved_pos
+        
+        if is_for_in:
+            # For-in loop: for (var in iterable)
+            var_name = self.parse_identifier()
+            self.expect("in")
+            iterable = self.parse_expression()
+            self.expect(")")
+            body = self.parse_block()
+            return ForInLoop(var_name, iterable, body)
+        else:
+            # C-style loop: for (init; cond; update)
+            init = self.parse_statement()
+            self.expect(";")
+            cond = self.parse_expression()
+            self.expect(";")
+            update = self.parse_expression()
+            self.expect(")")
+            body = self.parse_block()
+            return CStyleForLoop(init, cond, update, body)
+    
+    def parse_block(self) -> Body:
+        """Parse a block of statements {...}"""
+        self.expect("{")
+        statements = []
+        
+        while self.peek() and self.peek().val != "}":
+            stmt = self.parse_statement()
+            if stmt:
+                statements.append(stmt)
+        
+        self.expect("}")
+        return Body(statements)
+    
+    def parse_function_decl(self, modifiers: List[Modifier] = []) -> FunctionDecl:
+        """Parse function declaration"""
+        self.expect("func")
+        
+        # Parse name (may include generics like "linearSearch<T>" or just "linearSearch")
+        name_tok = self.peek()
+        if not name_tok or name_tok.type not in ("TYPE", "PATH"):
+            raise self.error(f"Expected function name")
+        
+        self.advance()
+        full_name = name_tok.val
+        
+        # Extract generic parameters from name if present
+        generic_params = []
+        if "<" in full_name:
+            base_name = full_name[:full_name.index("<")]
+            generic_str = full_name[full_name.index("<")+1:full_name.rindex(">")]
+            for g in generic_str.split(","):
+                g = g.strip()
+                generic_params.append(GenericParam(Identifier(g)))
+            name = Identifier(base_name)
+        else:
+            name = Identifier(full_name)
+        
+        # Parse parameters
+        param_groups = self.match_delimited("(", ")")
+        params = []
+        
+        for group in param_groups:
+            if not group:
+                continue
+                
+            # Parse parameter: [const] type [&] name [= default]
+            # Save current state
+            saved_tokens = self.tokens
+            saved_pos = self.current_token
+            
+            # Switch to parameter group tokens
+            self.tokens = group
+            self.current_token = 0
+            
+            try:
+                # Skip 'const' if present
+                if self.peek() and self.peek().val == "const":
+                    self.advance()
+                
+                param_type = self.parse_type()
+                
+                # Skip '&' if present
+                if self.peek() and self.peek().val == "&":
+                    self.advance()
+                
+                param_name = self.parse_identifier()
+                
+                # Check for default value
+                default = None
+                if self.peek() and self.peek().val == "=":
+                    self.advance()
+                    default = self.parse_expression()
+                
+                params.append(FuncDeclParam(param_name, param_type, default))
+            finally:
+                # Restore state
+                self.tokens = saved_tokens
+                self.current_token = saved_pos
+        
+        # Parse return type if present
+        return_type = Identifier("void")
+        if self.peek() and self.peek().val == "->":
+            self.advance()
+            return_type = self.parse_type()
+        
+        # Parse body
+        body = self.parse_block()
+        
+        return FunctionDecl(name, params, return_type, generic_params, body, modifiers)
+    
+    def parse_statement(self) -> Optional[ASTNode]:
+        """Parse a single statement"""
+        tok = self.peek()
+        
+        if not tok:
+            return None
+        
+        # Skip semicolons
+        if tok.val == ";":
+            self.advance()
+            return None
+        
+        # Keywords
+        if tok.type == "KEYW":
+            if tok.val == "func":
+                return self.parse_function_decl()
+            elif tok.val == "return":
+                return self.parse_return()
+            elif tok.val == "if":
+                return self.parse_if_statement()
+            elif tok.val == "while":
+                return self.parse_while_loop()
+            elif tok.val == "for":
+                return self.parse_for_loop()
+            elif tok.val == "break":
+                self.advance()
+                return Break()
+            elif tok.val == "continue":
+                self.advance()
+                return Continue()
+            elif tok.val in ("const", "static"):
+                # Modifier followed by declaration
+                modifiers = []
+                while self.peek() and self.peek().val in ("const", "static", "private", "public"):
+                    mod_tok = self.advance()
+                    if mod_tok.val == "const":
+                        modifiers.append(IsConstModifier())
+                    elif mod_tok.val == "static":
+                        modifiers.append(IsStaticModifier())
+                return self.parse_var_declare(modifiers)
+        
+        # Type declaration
+        if tok.type == "TYPE":
+            return self.parse_var_declare()
+        
+        # CPP Block
+        if tok.type == "CPP_BLOCK":
+            idx = int(tok.val)
+            self.advance()
+            return CPPBlock(self.cpp_blocks[idx])
+        
+        # Expression statement
+        expr = self.parse_expression()
+        if self.peek() and self.peek().val == ";":
+            self.advance()
+        return expr
+    
+    def parse(self) -> Program:
+        """Parse the entire program"""
+        statements = []
+        
+        while self.peek():
+            stmt = self.parse_statement()
+            if stmt:
+                statements.append(stmt)
+        
+        return Program(Body(statements))
 
-        if depth != 0:
-            out_parts.append(source[start:])
-            i = n
-            break
 
-        block = source[start:k]
-        brace_pos = block.find('{')
-        block_only = block[brace_pos:]  # include { ... }
-        placeholder = f"__CPP_BLOCK_{placeholder_index}__"
-        mapping[placeholder] = block_only
-        out_parts.append(placeholder)
-        placeholder_index += 1
-        i = k
-
-    merged = ''.join(out_parts)
-    return merged, mapping
-
-# -------------------- C++ Block Cleaner --------------------
-def clean_block(block: str) -> str:
-    # Preserve comment markers and avoid stripping content too aggressively.
-    if not block:
-        return ""
-
-    # Remove exactly one outer pair of braces if present (keep interior spacing)
-    first = block.find('{')
-    last = block.rfind('}')
-    if first != -1 and last != -1 and first < last:
-        inner = block[first+1:last]
-    else:
-        inner = block
-
-    # Keep original leading spaces; split into lines and trim only blank leading/trailing lines
-    lines = inner.splitlines()
-    while lines and lines[0].strip() == "":
-        lines.pop(0)
-    while lines and lines[-1].strip() == "":
-        lines.pop()
-
-    if not lines:
-        return ""
-
-    # Compute minimum indentation from non-empty, non-comment lines
-    indents = []
-    for line in lines:
-        if line.strip() and not line.strip().startswith("//"):
-            indents.append(len(line) - len(line.lstrip()))
-
-    min_indent = min(indents) if indents else 0
-
-    # Remove that many spaces from every line when possible (leave short/comment lines intact)
-    new_lines = [
-        (line[min_indent:] if len(line) >= min_indent else line)
-        for line in lines
-    ]
-
-    return "\n".join(new_lines).rstrip()
-
-# -------------------- Lark Transformer --------------------
+# ===================================
+# Main Entry Point
+# ===================================
 
 def main():
-    test_source = TEST
-    processed_source, cpp_mapping = extract_cpp_blocks(test_source)
+    sample = r"""
+func linearSearch<T>(const list<T>& nums, const T& target) -> int {
+    for (int i = 0; i < nums.size(); ++i) {
+        if (nums[i] == target) { return i; }
+    }
+    return -1;
+}
+"""
+    
+    try:
+        tokens, cpp_blocks = Lexer.lex_source(sample)
+        parser = Parser(tokens, cpp_blocks)
+        ast = parser.parse()
+        
+        print("=== Generated C++ Code ===")
+        print(ast.To_CXX())
+        
+    except Exception as e:
+        print(f"Error: {e}")
+        import traceback
+        traceback.print_exc()
 
-    # Clean each extracted C++ block
-    for key in cpp_mapping:
-        cpp_mapping[key] = clean_block(cpp_mapping[key])
-
-    print("Processed Source:")
-    print(processed_source)
-    print("\nC++ Blocks:")
-    for key, block in cpp_mapping.items():
-        print(f"{key}:\n{block}\n")
 
 if __name__ == "__main__":
     main()
